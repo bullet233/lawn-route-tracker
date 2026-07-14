@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="96" fill="#10b981"/>
+  <!-- stylized mower + blade of grass -->
+  <g fill="#ffffff">
+    <path d="M96 300h150l40-70h60v70h70v56H96z" opacity="0.95"/>
+    <circle cx="150" cy="380" r="34"/>
+    <circle cx="330" cy="380" r="34"/>
+    <path d="M300 230c14-60 44-96 92-120-10 58-36 96-92 120z"/>
+  </g>
+</svg>
