@@ -9,6 +9,11 @@ export function logForVisit(visitId) {
   return db.complianceLogs.where('visitId').equals(visitId).first()
 }
 
+/** A customer's EPA logs (uses the customerId index — no table scan). */
+export function logsForCustomer(customerId) {
+  return db.complianceLogs.where('customerId').equals(customerId).toArray()
+}
+
 /** Most recent compliance log (for Repeat-Last fast path). */
 export async function lastComplianceLog() {
   const all = await db.complianceLogs.orderBy('businessDate').toArray()

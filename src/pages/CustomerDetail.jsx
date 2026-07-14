@@ -11,6 +11,7 @@ import { updateCustomer, deleteCustomer, allCustomers } from '../db/customersRep
 import { visitsForCustomer } from '../db/visitsRepo.js'
 import { treatmentsForCustomer } from '../db/treatmentsRepo.js'
 import { activeServices, resolvePriceCents } from '../db/servicesRepo.js'
+import { logsForCustomer } from '../db/complianceRepo.js'
 import { getTargetHourlyRateCents } from '../db/settingsRepo.js'
 import { customerSubtitle } from '../utils/customerView.js'
 import { formatCents, parsePriceToCents } from '../utils/money.js'
@@ -26,8 +27,10 @@ import {
   relativeDay,
   mergeServiceOverrides,
 } from '../utils/customerServices.js'
+import { shapeCustomerFertilizer } from '../utils/customerFertilizer.js'
 import { geocodeAddress } from '../maps/geocode.js'
 import { ZoneEditor } from './ZoneEditor.jsx'
+import { ComplianceLogModal } from './ComplianceLogModal.jsx'
 
 const TONE_COLOR = { red: 'var(--red)', green: 'var(--green-dark)', slate: 'var(--text-muted)' }
 const SOURCE_LABEL = { gps: 'GPS', manual: 'Manual', split: 'Split' }
@@ -60,13 +63,7 @@ export function CustomerDetail({ customer, onBack, onDeleted }) {
       {tab === 'Services' && <ServicesTab customer={customer} />}
       {tab === 'Stats' && <StatsTab customer={customer} />}
       {tab === 'Location' && <LocationTab customer={customer} />}
-      {tab === 'Fertilizer' && (
-        <Card>
-          <p style={{ color: 'var(--text-muted)', margin: 0 }}>
-            Fertilizer tab arrives with its system (Phase 4). Data model is ready.
-          </p>
-        </Card>
-      )}
+      {tab === 'Fertilizer' && <FertilizerTab customer={customer} />}
     </>
   )
 }
@@ -214,6 +211,117 @@ function StateBadge({ tone, children }) {
     >
       {children}
     </span>
+  )
+}
+
+function FertilizerTab({ customer }) {
+  const visits = useLiveQuery(() => visitsForCustomer(customer.id), [customer.id], null)
+  const logs = useLiveQuery(() => logsForCustomer(customer.id), [customer.id], null)
+  const [openApp, setOpenApp] = useState(null) // {visit, items} whose EPA log is open
+
+  if (visits === null || logs === null)
+    return <p style={{ color: 'var(--text-muted)' }}>Loading…</p>
+
+  const f = shapeCustomerFertilizer(visits, logs)
+
+  return (
+    <>
+      {customer.specialApplications ? (
+        <Banner variant="warn" icon="⚠️">
+          <strong>Chemical constraints:</strong> {customer.specialApplications}
+        </Banner>
+      ) : (
+        <p style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-small)', margin: '0 0 4px' }}>
+          No chemical constraints on file. Add any on the Details tab.
+        </p>
+      )}
+
+      <Card style={{ marginTop: 12 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
+          <StatTile label="Applications" value={String(f.count)} sub="lifetime" />
+          <StatTile label="EPA logs" value={String(f.withLog)} sub="on file" />
+          <StatTile
+            label="Missing"
+            value={String(f.missing)}
+            sub={f.missing > 0 ? 'need a log' : 'all logged'}
+          />
+        </div>
+        {f.missing > 0 && (
+          <p style={{ margin: '12px 0 0', fontSize: 'var(--fs-small)', color: 'var(--red)', fontWeight: 600 }}>
+            {f.missing} application{f.missing > 1 ? 's are' : ' is'} missing an EPA record.
+          </p>
+        )}
+      </Card>
+
+      {f.products.length > 0 && (
+        <>
+          <p className="section-title" style={{ margin: '20px 0 8px' }}>
+            🧪 Products applied here
+          </p>
+          <Card>
+            {f.products.map((p) => (
+              <DataRow
+                key={p.productName + p.epaRegNum}
+                label={p.epaRegNum ? `${p.productName} · EPA ${p.epaRegNum}` : p.productName}
+                value={`${p.count}×`}
+              />
+            ))}
+          </Card>
+        </>
+      )}
+
+      <p className="section-title" style={{ margin: '20px 0 8px' }}>
+        🧾 Application history
+      </p>
+      {f.applications.length === 0 ? (
+        <EmptyState>
+          No fertilizer or chemical applications logged yet. They appear here once a fertilizer
+          service is added to a visit.
+        </EmptyState>
+      ) : (
+        f.applications.map((a) => (
+          <Card key={a.visit.id} style={{ marginBottom: 10 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 }}>
+              <strong>{formatServiceDate(a.visit.businessDate)}</strong>
+              {a.log ? (
+                <StateBadge tone="green">EPA logged</StateBadge>
+              ) : (
+                <StateBadge tone="red">No EPA log</StateBadge>
+              )}
+            </div>
+            <p style={{ margin: '6px 0 0', fontSize: 'var(--fs-small)', color: 'var(--text-muted)' }}>
+              {a.items.map((li) => li.name).join(', ')}
+            </p>
+            {a.log?.products?.length > 0 && (
+              <p style={{ margin: '4px 0 0', fontSize: 'var(--fs-small)' }}>
+                {a.log.products
+                  .filter((p) => p.productName)
+                  .map((p) => (p.epaRegNum ? `${p.productName} (EPA ${p.epaRegNum})` : p.productName))
+                  .join(' · ') || <span style={{ color: 'var(--text-muted)' }}>No products recorded</span>}
+              </p>
+            )}
+            <button
+              type="button"
+              className="btn btn-secondary"
+              style={{ marginTop: 10, ...(a.log ? {} : { color: 'var(--red)' }) }}
+              onClick={() => setOpenApp(a)}
+            >
+              {a.log ? 'View / print EPA record' : '+ Add EPA record'}
+            </button>
+          </Card>
+        ))
+      )}
+
+      {openApp && (
+        <ComplianceLogModal
+          visit={openApp.visit}
+          customer={customer}
+          fertLineItems={openApp.items}
+          onClose={() => setOpenApp(null)}
+          onSaved={() => setOpenApp(null)}
+        />
+      )}
+    </>
   )
 }
 
