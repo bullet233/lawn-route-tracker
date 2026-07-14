@@ -6,14 +6,19 @@
 import { useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { Card, Pill, DataRow, UnitField, Banner, StatTile, EmptyState } from '../components/ui/index.js'
+import { db } from '../db/index.js'
 import { updateCustomer, deleteCustomer, allCustomers } from '../db/customersRepo.js'
 import { visitsForCustomer } from '../db/visitsRepo.js'
 import { treatmentsForCustomer } from '../db/treatmentsRepo.js'
 import { activeServices, resolvePriceCents } from '../db/servicesRepo.js'
+import { getTargetHourlyRateCents } from '../db/settingsRepo.js'
 import { customerSubtitle } from '../utils/customerView.js'
 import { formatCents, parsePriceToCents } from '../utils/money.js'
 import { formatMinutes } from '../utils/format.js'
 import { visitRevenueCents } from '../utils/revenue.js'
+import { indexById } from '../utils/dueSelectors.js'
+import { fitMowDurationModel } from '../utils/pricingModel.js'
+import { customerStats } from '../utils/customerStats.js'
 import { today } from '../utils/dates.js'
 import {
   shapeCustomerServices,
@@ -26,6 +31,7 @@ import { ZoneEditor } from './ZoneEditor.jsx'
 
 const TONE_COLOR = { red: 'var(--red)', green: 'var(--green-dark)', slate: 'var(--text-muted)' }
 const SOURCE_LABEL = { gps: 'GPS', manual: 'Manual', split: 'Split' }
+const CATEGORY_LABEL = { mowing: 'Mowing', fertilizer: 'Fertilizer', cleanup: 'Cleanup', other: 'Other', addOn: 'Add-ons' }
 
 const TABS = ['Details', 'Services', 'Stats', 'Location', 'Fertilizer']
 
@@ -52,11 +58,12 @@ export function CustomerDetail({ customer, onBack, onDeleted }) {
 
       {tab === 'Details' && <DetailsTab customer={customer} onDeleted={onDeleted} />}
       {tab === 'Services' && <ServicesTab customer={customer} />}
+      {tab === 'Stats' && <StatsTab customer={customer} />}
       {tab === 'Location' && <LocationTab customer={customer} />}
-      {tab !== 'Details' && tab !== 'Services' && tab !== 'Location' && (
+      {tab === 'Fertilizer' && (
         <Card>
           <p style={{ color: 'var(--text-muted)', margin: 0 }}>
-            {tab} tab arrives with its system (Phase 2–4). Data model is ready.
+            Fertilizer tab arrives with its system (Phase 4). Data model is ready.
           </p>
         </Card>
       )}
@@ -207,6 +214,164 @@ function StateBadge({ tone, children }) {
     >
       {children}
     </span>
+  )
+}
+
+function StatsTab({ customer }) {
+  const visits = useLiveQuery(() => visitsForCustomer(customer.id), [customer.id], null)
+  const allVisits = useLiveQuery(() => db.visits.toArray(), [], null)
+  const customers = useLiveQuery(() => allCustomers(), [], null)
+  const services = useLiveQuery(() => activeServices(), [], null)
+  const rateCents = useLiveQuery(() => getTargetHourlyRateCents(), [], null)
+
+  if (visits === null || allVisits === null || customers === null || services === null || rateCents == null)
+    return <p style={{ color: 'var(--text-muted)' }}>Loading…</p>
+
+  const now = today()
+  const model = fitMowDurationModel(allVisits, indexById(customers))
+  const mowService = services.find((s) => s.category === 'mowing')
+  const mowPriceCents = mowService ? resolvePriceCents(mowService, customer) : null
+
+  const s = customerStats({
+    visits,
+    customer,
+    model,
+    targetHourlyRateCents: rateCents,
+    mowPriceCents,
+    today: now,
+  })
+
+  if (s.completedCount === 0)
+    return <EmptyState>No completed visits yet — stats appear once this client has been serviced.</EmptyState>
+
+  const under = s.effHourlyCents != null && s.effHourlyCents < rateCents
+  const categoryRows = Object.entries(s.byCategory).sort((a, b) => b[1] - a[1])
+
+  // predicted vs actual deltas
+  const timeDelta =
+    s.predictedMowMinutes != null && s.avgMowMinutes != null ? s.avgMowMinutes - s.predictedMowMinutes : null
+  const priceDelta =
+    s.suggestedMowPriceCents != null && s.currentMowPriceCents != null
+      ? s.currentMowPriceCents - s.suggestedMowPriceCents
+      : null
+
+  return (
+    <>
+      <Card>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
+          <StatTile
+            label="Earned"
+            value={s.effHourlyCents != null ? formatCents(s.effHourlyCents, { cents: false }) + '/hr' : '—'}
+            sub={`target ${formatCents(rateCents, { cents: false })}/hr`}
+          />
+          <StatTile
+            label="Avg / visit"
+            value={s.avgRevenuePerVisitCents != null ? formatCents(s.avgRevenuePerVisitCents, { cents: false }) : '—'}
+            sub={`${s.completedCount} visits`}
+          />
+          <StatTile
+            label="Avg mow"
+            value={s.avgMowSecs != null ? formatMinutes(s.avgMowSecs) : '—'}
+            sub={s.avgMowSecs != null ? 'per visit' : 'no timed mows'}
+          />
+        </div>
+        {s.effHourlyCents != null && (
+          <p
+            style={{
+              margin: '12px 0 0',
+              fontSize: 'var(--fs-small)',
+              color: under ? 'var(--red)' : 'var(--green-dark)',
+              fontWeight: 600,
+            }}
+          >
+            {under
+              ? `Under your target rate by ${formatCents(rateCents - s.effHourlyCents)}/hr.`
+              : `Beating your target rate by ${formatCents(s.effHourlyCents - rateCents)}/hr.`}
+          </p>
+        )}
+      </Card>
+
+      <p className="section-title" style={{ margin: '20px 0 8px' }}>
+        📐 Predicted vs actual
+      </p>
+      {!s.hasModel ? (
+        <Banner variant="info" icon="📐">
+          Need 3+ GPS-timed pure-mow visits across your clients to fit the size→time model.
+        </Banner>
+      ) : (
+        <Card>
+          <DataRow
+            label="Predicted mow time"
+            value={s.predictedMowMinutes != null ? `${s.predictedMowMinutes} min` : '—'}
+          />
+          <DataRow label="Actual avg mow time" value={s.avgMowMinutes != null ? `${s.avgMowMinutes} min` : '—'} />
+          {timeDelta != null && (
+            <p style={{ margin: '4px 0 12px', fontSize: 'var(--fs-small)', color: 'var(--text-muted)' }}>
+              {timeDelta > 0
+                ? `Mows ${timeDelta} min slower than its size predicts — likely interior obstacles.`
+                : timeDelta < 0
+                  ? `Mows ${-timeDelta} min faster than its size predicts.`
+                  : 'Right on the predicted time.'}
+            </p>
+          )}
+          <DataRow
+            label="Matrix-suggested price"
+            value={s.suggestedMowPriceCents != null ? formatCents(s.suggestedMowPriceCents) : '—'}
+          />
+          <DataRow
+            label="Your Mow price"
+            value={s.currentMowPriceCents != null ? formatCents(s.currentMowPriceCents) : '—'}
+          />
+          {priceDelta != null && priceDelta < 0 && (
+            <p style={{ margin: '4px 0 0', fontSize: 'var(--fs-small)', color: 'var(--red)', fontWeight: 600 }}>
+              {formatCents(-priceDelta)} under the matrix for this lawn.
+            </p>
+          )}
+        </Card>
+      )}
+
+      <p className="section-title" style={{ margin: '20px 0 8px' }}>
+        🔁 Mowing cadence
+      </p>
+      <Card>
+        <DataRow label="Target interval" value={s.targetIntervalDays ? `${s.targetIntervalDays} days` : 'Not set'} />
+        <DataRow
+          label="Actual average"
+          value={s.actualAvgIntervalDays != null ? `${s.actualAvgIntervalDays} days` : 'Need 2+ mows'}
+        />
+        <DataRow
+          label="Last mowed"
+          value={s.lastMowDate ? `${formatServiceDate(s.lastMowDate)} · ${relativeDay(s.lastMowDate, now)}` : '—'}
+        />
+        {s.nextDueDate && (
+          <DataRow
+            label="Next due"
+            value={
+              <span style={{ color: s.overdueDays >= 0 ? 'var(--red)' : 'inherit' }}>
+                {formatServiceDate(s.nextDueDate)} · {relativeDay(s.nextDueDate, now)}
+              </span>
+            }
+          />
+        )}
+      </Card>
+
+      <p className="section-title" style={{ margin: '20px 0 8px' }}>
+        💰 Revenue
+      </p>
+      <Card>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12, marginBottom: 12 }}>
+          <StatTile
+            label={`This season`}
+            value={formatCents(s.revenueThisSeasonCents, { cents: false })}
+            sub={`${s.mowsThisSeason} mows`}
+          />
+          <StatTile label="Lifetime" value={formatCents(s.revenueLifetimeCents, { cents: false })} sub="all time" />
+        </div>
+        {categoryRows.map(([cat, cents]) => (
+          <DataRow key={cat} label={CATEGORY_LABEL[cat] || cat} value={formatCents(cents)} />
+        ))}
+      </Card>
+    </>
   )
 }
 

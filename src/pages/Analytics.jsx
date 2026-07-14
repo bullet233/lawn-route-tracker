@@ -8,8 +8,9 @@ import { db } from '../db/index.js'
 import { allCustomers } from '../db/customersRepo.js'
 import { getTargetHourlyRateCents } from '../db/settingsRepo.js'
 import { indexById } from '../utils/dueSelectors.js'
-import { isModelEligibleMowingVisit, visitRevenueCents } from '../utils/revenue.js'
-import { fitPowerModel, pricingMatrix, effectiveHourlyCents } from '../utils/matrix.js'
+import { visitRevenueCents } from '../utils/revenue.js'
+import { pricingMatrix, effectiveHourlyCents } from '../utils/matrix.js'
+import { fitMowDurationModel } from '../utils/pricingModel.js'
 import { formatCents } from '../utils/money.js'
 
 const BUCKETS = [3000, 5000, 7500, 10000, 15000, 20000]
@@ -25,12 +26,8 @@ export function Analytics({ onClose }) {
 
   const customersById = indexById(customers)
 
-  // training samples: model-eligible mowing visits with a known lawn size
-  const samples = visits
-    .filter(isModelEligibleMowingVisit)
-    .map((v) => ({ x: customersById[v.customerId]?.lawnSqFt, y: v.durationSecs }))
-    .filter((s) => s.x > 0 && s.y > 0)
-  const model = fitPowerModel(samples)
+  // model-eligible mowing visits at known lawn sizes, fit to a power curve
+  const model = fitMowDurationModel(visits, customersById)
   const matrix = model ? pricingMatrix(model, BUCKETS, rateCents) : []
 
   // profitability: effective $/hr per completed visit
