@@ -9,8 +9,9 @@ import { Card, Pill, DataRow, UnitField, Banner, StatTile, EmptyState } from '..
 import { updateCustomer, deleteCustomer, allCustomers } from '../db/customersRepo.js'
 import { visitsForCustomer } from '../db/visitsRepo.js'
 import { treatmentsForCustomer } from '../db/treatmentsRepo.js'
+import { activeServices, resolvePriceCents } from '../db/servicesRepo.js'
 import { customerSubtitle } from '../utils/customerView.js'
-import { formatCents } from '../utils/money.js'
+import { formatCents, parsePriceToCents } from '../utils/money.js'
 import { formatMinutes } from '../utils/format.js'
 import { visitRevenueCents } from '../utils/revenue.js'
 import { today } from '../utils/dates.js'
@@ -18,6 +19,7 @@ import {
   shapeCustomerServices,
   formatServiceDate,
   relativeDay,
+  mergeServiceOverrides,
 } from '../utils/customerServices.js'
 import { geocodeAddress } from '../maps/geocode.js'
 import { ZoneEditor } from './ZoneEditor.jsx'
@@ -208,11 +210,88 @@ function StateBadge({ tone, children }) {
   )
 }
 
+function PricingCard({ customer, services }) {
+  // Effective price per service (customer override or catalog default), in cents.
+  const [prices, setPrices] = useState(() => {
+    const init = {}
+    for (const s of services) init[s.id] = resolvePriceCents(s, customer)
+    return init
+  })
+  const [savedAt, setSavedAt] = useState(null)
+
+  const setPrice = (id, dollars) => {
+    setPrices((p) => ({ ...p, [id]: parsePriceToCents(dollars) }))
+    setSavedAt(null)
+  }
+
+  async function save() {
+    const overrides = mergeServiceOverrides(customer.serviceOverrides, services, prices)
+    await updateCustomer(customer.id, { serviceOverrides: overrides })
+    setSavedAt(Date.now())
+  }
+
+  return (
+    <>
+      <p className="section-title" style={{ margin: '20px 0 8px' }}>
+        💵 Pricing
+      </p>
+      <Card>
+        <p style={{ margin: '0 0 12px', color: 'var(--text-muted)', fontSize: 'var(--fs-small)' }}>
+          Set this client’s price for each service. Blank/​default tracks the catalog price;
+          a custom price is used automatically when the service is added to a visit.
+        </p>
+        {services.map((svc) => {
+          const custom = prices[svc.id] !== svc.defaultPriceCents
+          return (
+            <div
+              key={svc.id}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 8,
+                padding: '8px 0',
+                borderTop: '1px solid var(--border)',
+              }}
+            >
+              <div style={{ minWidth: 0 }}>
+                <strong style={{ fontSize: 'var(--fs-small)' }}>{svc.name}</strong>
+                <p style={{ margin: '2px 0 0', color: 'var(--text-muted)', fontSize: 'var(--fs-small)' }}>
+                  {custom ? `Custom · default ${formatCents(svc.defaultPriceCents)}` : 'Catalog default'}
+                </p>
+              </div>
+              <span className="unit-field" style={{ width: 120 }}>
+                <span className="unit-field__suffix">$</span>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={(prices[svc.id] / 100).toString()}
+                  onChange={(e) => setPrice(svc.id, e.target.value)}
+                />
+              </span>
+            </div>
+          )
+        })}
+        <div style={{ display: 'flex', gap: 8, marginTop: 16, alignItems: 'center' }}>
+          <button type="button" className="btn btn-primary" onClick={save}>
+            Save pricing
+          </button>
+          {savedAt && (
+            <span style={{ color: 'var(--green-dark)', fontSize: 'var(--fs-small)' }}>Saved ✓</span>
+          )}
+        </div>
+      </Card>
+    </>
+  )
+}
+
 function ServicesTab({ customer }) {
   const visits = useLiveQuery(() => visitsForCustomer(customer.id), [customer.id], null)
   const treatments = useLiveQuery(() => treatmentsForCustomer(customer.id), [customer.id], null)
+  const services = useLiveQuery(() => activeServices(), [], null)
 
-  if (visits === null || treatments === null)
+  if (visits === null || treatments === null || services === null)
     return <p style={{ color: 'var(--text-muted)' }}>Loading…</p>
 
   const now = today()
@@ -238,6 +317,8 @@ function ServicesTab({ customer }) {
           />
         </div>
       </Card>
+
+      <PricingCard customer={customer} services={services} />
 
       {s.hasTreatments && (
         <>

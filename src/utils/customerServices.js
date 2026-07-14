@@ -24,6 +24,28 @@ export function formatServiceDate(bd) {
   })
 }
 
+/**
+ * Build a customer's serviceOverrides map from edited per-service prices (cents),
+ * keyed by serviceId. A price equal to the catalog default DROPS the override, so
+ * the customer keeps tracking future default changes; a differing price stores it.
+ * Any non-price override fields already present (e.g. `active`) are preserved.
+ */
+export function mergeServiceOverrides(existing, services, pricesById) {
+  const out = { ...(existing || {}) }
+  for (const s of services || []) {
+    const typed = pricesById?.[s.id]
+    const { priceCents, ...rest } = out[s.id] || {}
+    if (typed == null || typed === s.defaultPriceCents) {
+      // No custom price: keep other flags if any, else remove the entry entirely.
+      if (Object.keys(rest).length) out[s.id] = rest
+      else delete out[s.id]
+    } else {
+      out[s.id] = { ...rest, priceCents: typed }
+    }
+  }
+  return out
+}
+
 /** "today" / "3 days ago" / "in 5 days" relative to today's businessDate. */
 export function relativeDay(bd, today) {
   if (!bd) return ''

@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest'
-import { shapeCustomerServices, formatServiceDate, relativeDay } from './customerServices.js'
+import {
+  shapeCustomerServices,
+  formatServiceDate,
+  relativeDay,
+  mergeServiceOverrides,
+} from './customerServices.js'
 
 const mow = { serviceId: 'm', name: 'Mow', category: 'mowing', priceCents: 4000 }
 const fert = { serviceId: 'f', name: 'Fert', category: 'fertilizer', priceCents: 6000 }
@@ -54,5 +59,37 @@ describe('customerServices', () => {
 
   it('formatServiceDate is human-readable', () => {
     expect(formatServiceDate('2026-07-14')).toBe('Jul 14, 2026')
+  })
+
+  describe('mergeServiceOverrides', () => {
+    const services = [
+      { id: 'mow', defaultPriceCents: 4000 },
+      { id: 'fert', defaultPriceCents: 6000 },
+    ]
+
+    it('stores a price that differs from the default', () => {
+      const out = mergeServiceOverrides({}, services, { mow: 5000, fert: 6000 })
+      expect(out).toEqual({ mow: { priceCents: 5000 } }) // fert == default → not stored
+    })
+
+    it('drops an override when the price returns to the default', () => {
+      const out = mergeServiceOverrides({ mow: { priceCents: 5000 } }, services, { mow: 4000 })
+      expect(out.mow).toBeUndefined()
+    })
+
+    it('preserves non-price flags when dropping a price', () => {
+      const out = mergeServiceOverrides(
+        { mow: { priceCents: 5000, active: false } },
+        services,
+        { mow: 4000 },
+      )
+      expect(out.mow).toEqual({ active: false })
+    })
+
+    it('leaves untouched services alone', () => {
+      const out = mergeServiceOverrides({ other: { priceCents: 999 } }, services, { mow: 5000 })
+      expect(out.other).toEqual({ priceCents: 999 })
+      expect(out.mow).toEqual({ priceCents: 5000 })
+    })
   })
 })
