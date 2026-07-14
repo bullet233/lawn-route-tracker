@@ -5,11 +5,25 @@
 
 import { useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { Card, Pill, DataRow, UnitField, Banner } from '../components/ui/index.js'
+import { Card, Pill, DataRow, UnitField, Banner, StatTile, EmptyState } from '../components/ui/index.js'
 import { updateCustomer, deleteCustomer, allCustomers } from '../db/customersRepo.js'
+import { visitsForCustomer } from '../db/visitsRepo.js'
+import { treatmentsForCustomer } from '../db/treatmentsRepo.js'
 import { customerSubtitle } from '../utils/customerView.js'
+import { formatCents } from '../utils/money.js'
+import { formatMinutes } from '../utils/format.js'
+import { visitRevenueCents } from '../utils/revenue.js'
+import { today } from '../utils/dates.js'
+import {
+  shapeCustomerServices,
+  formatServiceDate,
+  relativeDay,
+} from '../utils/customerServices.js'
 import { geocodeAddress } from '../maps/geocode.js'
 import { ZoneEditor } from './ZoneEditor.jsx'
+
+const TONE_COLOR = { red: 'var(--red)', green: 'var(--green-dark)', slate: 'var(--text-muted)' }
+const SOURCE_LABEL = { gps: 'GPS', manual: 'Manual', split: 'Split' }
 
 const TABS = ['Details', 'Services', 'Stats', 'Location', 'Fertilizer']
 
@@ -35,8 +49,9 @@ export function CustomerDetail({ customer, onBack, onDeleted }) {
       </div>
 
       {tab === 'Details' && <DetailsTab customer={customer} onDeleted={onDeleted} />}
+      {tab === 'Services' && <ServicesTab customer={customer} />}
       {tab === 'Location' && <LocationTab customer={customer} />}
-      {tab !== 'Details' && tab !== 'Location' && (
+      {tab !== 'Details' && tab !== 'Services' && tab !== 'Location' && (
         <Card>
           <p style={{ color: 'var(--text-muted)', margin: 0 }}>
             {tab} tab arrives with its system (Phase 2–4). Data model is ready.
@@ -172,6 +187,171 @@ function DetailsTab({ customer, onDeleted }) {
         </div>
       </Card>
     </>
+  )
+}
+
+function StateBadge({ tone, children }) {
+  return (
+    <span
+      style={{
+        fontSize: 'var(--fs-small)',
+        fontWeight: 600,
+        color: TONE_COLOR[tone] || 'var(--text-muted)',
+        border: `1px solid ${TONE_COLOR[tone] || 'var(--border)'}`,
+        borderRadius: 999,
+        padding: '1px 8px',
+        whiteSpace: 'nowrap',
+      }}
+    >
+      {children}
+    </span>
+  )
+}
+
+function ServicesTab({ customer }) {
+  const visits = useLiveQuery(() => visitsForCustomer(customer.id), [customer.id], null)
+  const treatments = useLiveQuery(() => treatmentsForCustomer(customer.id), [customer.id], null)
+
+  if (visits === null || treatments === null)
+    return <p style={{ color: 'var(--text-muted)' }}>Loading…</p>
+
+  const now = today()
+  const s = shapeCustomerServices(visits, treatments, now)
+
+  return (
+    <>
+      <Card>
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(3, 1fr)',
+            gap: 12,
+          }}
+        >
+          <StatTile label="Services" value={String(s.completedCount)} sub="completed" />
+          <StatTile label="Revenue" value={formatCents(s.revenueCents, { cents: false })} sub="lifetime" />
+          <StatTile
+            label="Last visit"
+            value={s.lastVisitDate ? relativeDay(s.lastVisitDate, now) : '—'}
+            sub={s.lastVisitDate ? formatServiceDate(s.lastVisitDate) : 'never serviced'}
+            tabular={false}
+          />
+        </div>
+      </Card>
+
+      {s.hasTreatments && (
+        <>
+          <p className="section-title" style={{ margin: '20px 0 8px' }}>
+            🌱 Treatment schedule
+          </p>
+          <Card>
+            {s.treatments.map((t, i) => (
+              <div
+                key={t.id}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: 8,
+                  padding: '8px 0',
+                  borderTop: i === 0 ? 'none' : '1px solid var(--border)',
+                }}
+              >
+                <div style={{ minWidth: 0 }}>
+                  <strong style={{ fontSize: 'var(--fs-small)' }}>
+                    {t.stepName || 'Treatment'}
+                  </strong>
+                  <p style={{ margin: '2px 0 0', color: 'var(--text-muted)', fontSize: 'var(--fs-small)' }}>
+                    {t.windowStart && t.windowEnd
+                      ? `Window ${formatServiceDate(t.windowStart)} – ${formatServiceDate(t.windowEnd)}`
+                      : `${t.year}`}
+                  </p>
+                </div>
+                <StateBadge tone={t.tone}>{t.label}</StateBadge>
+              </div>
+            ))}
+          </Card>
+        </>
+      )}
+
+      <p className="section-title" style={{ margin: '20px 0 8px' }}>
+        🧾 Service history
+      </p>
+      {s.history.length === 0 ? (
+        <EmptyState>No services logged yet. Completed visits show up here.</EmptyState>
+      ) : (
+        s.history.map((day) => (
+          <Card key={day.date} style={{ marginBottom: 12 }}>
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'baseline',
+                marginBottom: 8,
+              }}
+            >
+              <strong>{formatServiceDate(day.date)}</strong>
+              <span style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-small)' }}>
+                {relativeDay(day.date, now)}
+              </span>
+            </div>
+            {day.visits.map((v) => (
+              <VisitRow key={v.id} visit={v} />
+            ))}
+          </Card>
+        ))
+      )}
+    </>
+  )
+}
+
+function VisitRow({ visit }) {
+  const skipped = visit.status === 'skipped'
+  const items = visit.lineItems || []
+  const addOns = visit.addOns || []
+  return (
+    <div style={{ padding: '8px 0', borderTop: '1px solid var(--border)' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+        <span style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 'var(--fs-small)', color: 'var(--text-muted)' }}>
+          <StateBadge tone={skipped ? 'slate' : 'green'}>
+            {skipped ? 'Skipped' : SOURCE_LABEL[visit.source] || 'Visit'}
+          </StateBadge>
+          {!skipped && visit.durationSecs ? formatMinutes(visit.durationSecs) : null}
+        </span>
+        {!skipped && (
+          <strong className="tabular">{formatCents(visitRevenueCents(visit))}</strong>
+        )}
+      </div>
+      {!skipped &&
+        items.map((li, i) => (
+          <div
+            key={i}
+            style={{ display: 'flex', justifyContent: 'space-between', fontSize: 'var(--fs-small)', marginTop: 4 }}
+          >
+            <span>{li.name}</span>
+            <span className="tabular" style={{ color: 'var(--text-muted)' }}>
+              {formatCents(li.priceCents)}
+            </span>
+          </div>
+        ))}
+      {!skipped &&
+        addOns.map((a, i) => (
+          <div
+            key={`a${i}`}
+            style={{ display: 'flex', justifyContent: 'space-between', fontSize: 'var(--fs-small)', marginTop: 4 }}
+          >
+            <span>＋ {a.name}</span>
+            <span className="tabular" style={{ color: 'var(--text-muted)' }}>
+              {formatCents(a.priceCents)}
+            </span>
+          </div>
+        ))}
+      {visit.note && (
+        <p style={{ margin: '6px 0 0', fontSize: 'var(--fs-small)', color: 'var(--text-muted)' }}>
+          “{visit.note}”
+        </p>
+      )}
+    </div>
   )
 }
 

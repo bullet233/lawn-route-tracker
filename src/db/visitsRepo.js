@@ -10,6 +10,11 @@ export function visitsForDate(bd) {
   return db.visits.where('businessDate').equals(bd).toArray()
 }
 
+/** A customer's full visit history (uses the customerId index — no table scan). */
+export function visitsForCustomer(customerId) {
+  return db.visits.where('customerId').equals(customerId).toArray()
+}
+
 export function updateVisit(id, patch) {
   return db.visits.update(id, patch)
 }

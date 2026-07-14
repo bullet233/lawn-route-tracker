@@ -13,6 +13,11 @@ export function treatmentsForCustomerYear(customerId, year) {
   return db.treatments.where('[customerId+year]').equals([customerId, year]).toArray()
 }
 
+/** A customer's treatments across all years (uses the customerId index). */
+export function treatmentsForCustomer(customerId) {
+  return db.treatments.where('customerId').equals(customerId).toArray()
+}
+
 export function allTreatments() {
   return db.treatments.toArray()
 }
