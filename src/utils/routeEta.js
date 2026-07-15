@@ -34,7 +34,7 @@ export function estimateRouteRemaining({
   activeCustomerId = null,
   activeElapsedSecs = 0,
 }) {
-  const remaining = stops.filter((s) => !s.done)
+  const remaining = stops.filter((s) => !s.done && !s.skipped)
 
   const perStopJobSecs = {}
   let jobSecs = 0

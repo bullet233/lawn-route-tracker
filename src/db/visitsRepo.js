@@ -32,6 +32,19 @@ export function getVisit(id) {
   return db.visits.get(id)
 }
 
+export function deleteVisit(id) {
+  return db.visits.delete(id)
+}
+
+/** Skip a route stop before ever arriving — a manual, status:'skipped' visit
+ * (no line items). Drops the stop from the live route count/ETA; reversible by
+ * deleting the record (undo). */
+export async function addSkippedVisit(customerId, now = Date.now()) {
+  const record = { ...makeManualVisit(customerId, [], now), status: 'skipped' }
+  await db.visits.add(record)
+  return record
+}
+
 /** Persist a manual visit and return the record. */
 export async function addManualVisit(customerId, lineItems = [], now = Date.now()) {
   const record = makeManualVisit(customerId, lineItems, now)

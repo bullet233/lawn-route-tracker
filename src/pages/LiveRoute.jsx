@@ -17,7 +17,7 @@ import { formatClock, formatMinutes } from '../utils/format.js'
 import { db } from '../db/index.js'
 import { allCustomers } from '../db/customersRepo.js'
 import { activeRoute } from '../db/routesRepo.js'
-import { visitsForDate } from '../db/visitsRepo.js'
+import { visitsForDate, addSkippedVisit, deleteVisit } from '../db/visitsRepo.js'
 import { today } from '../utils/dates.js'
 import { indexById } from '../utils/dueSelectors.js'
 import { fitMowDurationModel } from '../utils/pricingModel.js'
@@ -33,26 +33,39 @@ function milesAway(from, to) {
   return mi >= 10 ? `${Math.round(mi)} mi` : `${mi.toFixed(1)} mi`
 }
 
-/** Ordered route stops joined to customers + today's visited set (SPEC §5). */
+/** Ordered route stops joined to customers + today's visits (SPEC §5). */
 function buildStops(route, customers, todaysVisits) {
   if (!route) return []
   const byId = {}
   for (const c of customers) byId[c.id] = c
-  const visited = new Set((todaysVisits || []).map((v) => v.customerId))
+  // one visit per customer, preferring a completed one over a skip
+  const visitByCustomer = {}
+  for (const v of todaysVisits || []) {
+    const cur = visitByCustomer[v.customerId]
+    if (!cur || (cur.status !== 'completed' && v.status === 'completed')) visitByCustomer[v.customerId] = v
+  }
   const ordered = [...(route.stops || [])].sort((a, b) => a.order - b.order)
   let nextAssigned = false
   return ordered.map((stop) => {
     const c = byId[stop.customerId]
-    const done = visited.has(stop.customerId)
-    const isNext = !done && !nextAssigned
+    const v = visitByCustomer[stop.customerId]
+    const done = v?.status === 'completed'
+    const skipped = v?.status === 'skipped'
+    const finished = done || skipped
+    const isNext = !finished && !nextAssigned
     if (isNext) nextAssigned = true
     return {
       id: stop.customerId,
       name: c?.name || 'Customer',
       address: c?.address || '',
+      phone: c?.phone || '',
       location: c?.location || null,
       done,
+      skipped,
+      finished,
       isNext,
+      visitId: v?.id || null,
+      visitSource: v?.source || null,
     }
   })
 }
@@ -179,7 +192,7 @@ export function LiveRoute({ session }) {
           timers={timers}
           nameOf={nameOf}
           next={next}
-          remaining={stops.length - doneCount}
+          remaining={eta.remainingStops}
           currentPos={session.lastFix}
         />
       )}
@@ -198,6 +211,8 @@ export function LiveRoute({ session }) {
             expanded={showStops}
             onToggle={() => setShowStops((v) => !v)}
             currentPos={session.lastFix}
+            onSkip={(customerId) => addSkippedVisit(customerId)}
+            onUnskip={(visitId) => deleteVisit(visitId)}
           />
         </>
       )}
@@ -320,12 +335,15 @@ function HeroCard({ phase, state, timers, nameOf, next, remaining, currentPos })
  * bar, and a micro meta line ("2/5 done · ~58m jobs · ~20m driving").
  * Expanded adds the full stop list with addresses and per-stop estimates.
  */
-function RouteCard({ stops, doneCount, eta, now, expanded, onToggle, currentPos }) {
+function RouteCard({ stops, doneCount, eta, now, expanded, onToggle, currentPos, onSkip, onUnskip }) {
   const noLocation = stops.filter((s) => !s.location).length
+  const skippedCount = stops.filter((s) => s.skipped).length
+  const finishedCount = stops.filter((s) => s.finished).length
   const meta = [`${doneCount}/${stops.length} done`]
+  if (skippedCount > 0) meta.push(`${skippedCount} skipped`)
   if (eta.jobSecs > 0) meta.push(`~${formatMinutes(eta.jobSecs)} jobs`)
   if (eta.driveSecs > 0) meta.push(`~${formatMinutes(eta.driveSecs)} driving`)
-  const pct = stops.length ? Math.round((doneCount / stops.length) * 100) : 0
+  const pct = stops.length ? Math.round((finishedCount / stops.length) * 100) : 0
   const doneBy = new Date(now + eta.totalSecs * 1000).toLocaleTimeString('en-US', {
     hour: 'numeric',
     minute: '2-digit',
@@ -358,48 +376,17 @@ function RouteCard({ stops, doneCount, eta, now, expanded, onToggle, currentPos 
 
       {expanded && (
         <div style={{ marginTop: 8 }}>
-          {stops.map((s, i) => {
-            const away = !s.done && s.isNext ? milesAway(currentPos, s.location) : null
-            const est = !s.done ? eta.perStopJobSecs[s.id] : null
-            return (
-              <div
-                key={s.id}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 8,
-                  padding: '7px 0',
-                  borderTop: '1px solid var(--border)',
-                  opacity: s.done ? 0.55 : 1,
-                }}
-              >
-                <span
-                  className="tabular"
-                  style={{ width: 22, color: s.done ? 'var(--text-muted)' : s.isNext ? 'var(--green-dark)' : 'var(--text)', fontWeight: 700 }}
-                >
-                  {s.done ? '✓' : i + 1}
-                </span>
-                <span style={{ flex: 1, minWidth: 0 }}>
-                  <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: s.isNext ? 700 : 400 }}>
-                    {s.name}
-                    {s.isNext && <span style={{ color: 'var(--green-dark)', fontSize: 'var(--fs-small)', fontWeight: 600 }}> · next{away ? ` · ${away}` : ''}</span>}
-                  </span>
-                  {s.address && (
-                    <span style={{ display: 'block', color: 'var(--text-muted)', fontSize: 'var(--fs-small)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {s.address}
-                    </span>
-                  )}
-                </span>
-                {!s.location ? (
-                  <span style={{ color: 'var(--red)', fontSize: 'var(--fs-small)' }}>no location</span>
-                ) : est != null ? (
-                  <span className="tabular" style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-small)', whiteSpace: 'nowrap' }}>
-                    ~{formatMinutes(est)}
-                  </span>
-                ) : null}
-              </div>
-            )
-          })}
+          {stops.map((s, i) => (
+            <StopRow
+              key={s.id}
+              stop={s}
+              index={i}
+              estSecs={eta.perStopJobSecs[s.id]}
+              away={s.isNext ? milesAway(currentPos, s.location) : null}
+              onSkip={onSkip}
+              onUnskip={onUnskip}
+            />
+          ))}
           {noLocation > 0 && (
             <p style={{ margin: '8px 0 0', fontSize: 'var(--fs-small)', color: 'var(--text-muted)' }}>
               {noLocation} stop{noLocation > 1 ? 's have' : ' has'} no saved location — geocode them on the
@@ -409,6 +396,89 @@ function RouteCard({ stops, doneCount, eta, now, expanded, onToggle, currentPos 
         </div>
       )}
     </Card>
+  )
+}
+
+/** One row of the expanded stop list: status marker, name/address, est. job
+ * time, and a Skip/Undo action. */
+function StopRow({ stop: s, index, estSecs, away, onSkip, onUnskip }) {
+  const marker = s.done ? '✓' : s.skipped ? '✗' : index + 1
+  const markerColor = s.finished ? 'var(--text-muted)' : s.isNext ? 'var(--green-dark)' : 'var(--text)'
+  const canUndo = s.skipped && s.visitSource === 'manual'
+
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
+        padding: '7px 0',
+        borderTop: '1px solid var(--border)',
+        opacity: s.finished ? 0.55 : 1,
+      }}
+    >
+      <span className="tabular" style={{ width: 22, color: markerColor, fontWeight: 700 }}>
+        {marker}
+      </span>
+      <span style={{ flex: 1, minWidth: 0 }}>
+        <span
+          style={{
+            display: 'block',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+            fontWeight: s.isNext ? 700 : 400,
+            textDecoration: s.skipped ? 'line-through' : 'none',
+          }}
+        >
+          {s.name}
+          {s.isNext && (
+            <span style={{ color: 'var(--green-dark)', fontSize: 'var(--fs-small)', fontWeight: 600 }}>
+              {' '}· next{away ? ` · ${away}` : ''}
+            </span>
+          )}
+          {s.skipped && (
+            <span style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-small)', fontWeight: 600 }}> · skipped</span>
+          )}
+        </span>
+        {s.address && (
+          <span style={{ display: 'block', color: 'var(--text-muted)', fontSize: 'var(--fs-small)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {s.address}
+          </span>
+        )}
+      </span>
+
+      {/* est. job time — only for stops still to come */}
+      {!s.finished && estSecs != null && (
+        <span className="tabular" style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-small)', whiteSpace: 'nowrap' }}>
+          ~{formatMinutes(estSecs)}
+        </span>
+      )}
+      {!s.location && !s.finished && (
+        <span style={{ color: 'var(--red)', fontSize: 'var(--fs-small)' }}>no loc</span>
+      )}
+
+      {/* action: skip an upcoming stop, or undo a manual skip */}
+      {canUndo ? (
+        <button
+          type="button"
+          className="btn btn-secondary"
+          style={{ minHeight: 36, padding: '0 10px', fontSize: 'var(--fs-small)' }}
+          onClick={() => onUnskip(s.visitId)}
+        >
+          Undo
+        </button>
+      ) : !s.finished ? (
+        <button
+          type="button"
+          className="btn btn-secondary"
+          style={{ minHeight: 36, padding: '0 10px', fontSize: 'var(--fs-small)', color: 'var(--text-muted)' }}
+          onClick={() => onSkip(s.id)}
+        >
+          Skip
+        </button>
+      ) : null}
+    </div>
   )
 }
 

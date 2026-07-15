@@ -33,7 +33,7 @@ function Home({ onOpenDayReview, onGoToRoute }) {
   const completed = (visits || []).filter((v) => v.status === 'completed')
   const revenue = totalRevenueCents(visits || [])
   const fieldSecs = dayJobSeconds(visits || []) + dayDriveSeconds(visits || [])
-  const unreviewed = (visits || []).filter((v) => (v.lineItems || []).length === 0).length
+  const unreviewed = (visits || []).filter((v) => v.status !== 'skipped' && (v.lineItems || []).length === 0).length
 
   return (
     <>

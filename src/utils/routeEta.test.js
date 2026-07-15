@@ -54,6 +54,17 @@ describe('estimateRouteRemaining', () => {
     expect(eta.totalSecs).toBe(eta.jobSecs + eta.driveSecs)
   })
 
+  it('excludes skipped stops from the remaining estimate', () => {
+    const stops = [
+      { id: 'a', done: false, skipped: true, location: null }, // skipped → not counted
+      { id: 'b', done: false, location: null },
+    ]
+    const eta = estimateRouteRemaining({ stops, customersById, model })
+    expect(eta.remainingStops).toBe(1)
+    expect(eta.jobSecs).toBe(600) // only b
+    expect(eta.perStopJobSecs).toEqual({ b: 600 })
+  })
+
   it('handles no remaining stops and no fix', () => {
     const eta = estimateRouteRemaining({ stops: [{ id: 'a', done: true, location: loc(0) }], customersById, model })
     expect(eta).toMatchObject({ remainingStops: 0, jobSecs: 0, driveSecs: 0, totalSecs: 0 })

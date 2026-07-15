@@ -40,7 +40,9 @@ export function RouteMap({ stops, currentPos, height = 300 }) {
 
   // located stops only (skip customers with no geocoded location)
   const located = (stops || []).filter((s) => s.location)
-  const stopsKey = located.map((s) => `${s.id}:${s.done ? 1 : 0}:${s.isNext ? 1 : 0}`).join('|')
+  const stopsKey = located
+    .map((s) => `${s.id}:${s.done ? 1 : 0}:${s.skipped ? 1 : 0}:${s.isNext ? 1 : 0}`)
+    .join('|')
 
   // create the map once
   useEffect(() => {
@@ -73,7 +75,7 @@ export function RouteMap({ stops, currentPos, height = 300 }) {
 
     markersRef.current.forEach((m) => m.setMap(null))
     markersRef.current = located.map((s, i) => {
-      const color = s.done ? PIN.done : s.isNext ? PIN.next : PIN.pending
+      const color = s.done || s.skipped ? PIN.done : s.isNext ? PIN.next : PIN.pending
       return new maps.Marker({
         position: s.location,
         map,
