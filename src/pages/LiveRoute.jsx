@@ -194,6 +194,7 @@ export function LiveRoute({ session }) {
             stops={stops}
             doneCount={doneCount}
             eta={eta}
+            now={clock}
             expanded={showStops}
             onToggle={() => setShowStops((v) => !v)}
             currentPos={session.lastFix}
@@ -313,45 +314,61 @@ function HeroCard({ phase, state, timers, nameOf, next, remaining, currentPos })
 }
 
 /**
- * Collapsible route card. Collapsed: progress chips + "~1h 20m left" with a
- * jobs/driving breakdown. Expanded: the full stop list with addresses and
- * per-stop time estimates.
+ * Collapsible route card, styled like a bottom sheet: a grabber handle + a
+ * chip label are the expand affordance (no arrows). Collapsed: two big stats
+ * — time left and the projected finish clock time — over a jobs/driving
+ * breakdown and the progress bar. Expanded: the full stop list with addresses
+ * and per-stop time estimates.
  */
-function RouteCard({ stops, doneCount, eta, expanded, onToggle, currentPos }) {
+function RouteCard({ stops, doneCount, eta, now, expanded, onToggle, currentPos }) {
   const noLocation = stops.filter((s) => !s.location).length
   const parts = []
   if (eta.jobSecs > 0) parts.push(`${formatMinutes(eta.jobSecs)} jobs`)
   if (eta.driveSecs > 0) parts.push(`${formatMinutes(eta.driveSecs)} driving`)
+  const pct = stops.length ? Math.round((doneCount / stops.length) * 100) : 0
+  const doneBy = new Date(now + eta.totalSecs * 1000).toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+  })
 
   return (
     <Card style={{ marginTop: 10 }}>
-      <button type="button" className="route-card__head" onClick={onToggle}>
-        <div style={{ minWidth: 0 }}>
-          <div className="stat-tile__label">Route · {doneCount}/{stops.length} done</div>
-          <strong style={{ fontSize: 'var(--fs-card)' }}>
-            {eta.remainingStops > 0 ? `~${formatMinutes(eta.totalSecs)} left` : 'All stops done 🎉'}
-          </strong>
-          {eta.remainingStops > 0 && parts.length > 0 && (
-            <p style={{ margin: '2px 0 0', color: 'var(--text-muted)', fontSize: 'var(--fs-small)' }}>
-              ~{parts.join(' · ')}
-            </p>
-          )}
+      <button type="button" className="route-card__head" onClick={onToggle} aria-expanded={expanded}>
+        <span className="route-card__grab" aria-hidden="true" />
+        <div className="live-hero__row" style={{ alignItems: 'center' }}>
+          <div className="stat-tile__label">Route</div>
+          <span className="live-chip">{expanded ? 'Hide' : `${stops.length} stops`}</span>
         </div>
-        <span style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-small)', fontWeight: 600, whiteSpace: 'nowrap' }}>
-          {expanded ? 'Hide ▲' : 'Stops ▼'}
-        </span>
-      </button>
 
-      <div className="stop-chips" style={{ marginTop: 8 }}>
-        {stops.map((s, i) => (
-          <span
-            key={s.id}
-            className={'stop-chip' + (s.done ? ' stop-chip--done' : s.isNext ? ' stop-chip--next' : '')}
-          >
-            {s.done ? '✓' : i + 1}
+        {eta.remainingStops > 0 ? (
+          <>
+            <div className="route-card__stats">
+              <div>
+                <div className="stat-tile__label">Time left</div>
+                <div className="route-card__big tabular">~{formatMinutes(eta.totalSecs)}</div>
+              </div>
+              <div>
+                <div className="stat-tile__label">Done by</div>
+                <div className="route-card__big tabular">~{doneBy}</div>
+              </div>
+            </div>
+            {parts.length > 0 && (
+              <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: 'var(--fs-small)' }}>
+                ~{parts.join(' · ')}
+              </p>
+            )}
+          </>
+        ) : (
+          <div className="route-card__big">All stops done 🎉</div>
+        )}
+
+        <div className="progress-row">
+          <span className="progress-track">
+            <span className="progress-fill" style={{ width: `${pct}%` }} />
           </span>
-        ))}
-      </div>
+          <span className="progress-count tabular">{doneCount}/{stops.length} done</span>
+        </div>
+      </button>
 
       {expanded && (
         <div style={{ marginTop: 8 }}>

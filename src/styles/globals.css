@@ -511,8 +511,8 @@ body {
 .route-card__head {
   width: 100%;
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  flex-direction: column;
+  align-items: stretch;
   gap: calc(var(--space) * 2);
   padding: 0;
   border: none;
@@ -522,38 +522,49 @@ body {
   text-align: left;
   min-height: 44px; /* field-size tap target */
 }
-.stop-chips {
-  display: flex;
-  gap: 6px;
-  overflow-x: auto;
-  flex: 1;
-  scrollbar-width: none;
-}
-.stop-chips::-webkit-scrollbar {
-  display: none;
-}
-.stop-chip {
-  flex: 0 0 auto;
-  min-width: 32px;
-  height: 32px;
+/* bottom-sheet style grabber — the "this expands" affordance */
+.route-card__grab {
+  width: 44px;
+  height: 5px;
   border-radius: var(--radius-full);
+  background: var(--border-strong);
+  margin: 0 auto;
+}
+/* two big glanceable stats: time left · done by */
+.route-card__stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: calc(var(--space) * 3);
+}
+.route-card__big {
+  font-size: var(--fs-title);
+  font-weight: 700;
+  line-height: 1.1;
+}
+.progress-row {
   display: flex;
   align-items: center;
-  justify-content: center;
-  font-weight: 700;
-  font-size: var(--fs-small);
-  background: #fff;
-  border: 2px solid var(--border-strong);
-  color: var(--text-muted);
+  gap: calc(var(--space) * 2);
 }
-.stop-chip--done {
+.progress-track {
+  flex: 1;
+  height: 10px;
+  border-radius: var(--radius-full);
   background: var(--bg-inset);
-  border-color: var(--border);
+  overflow: hidden;
 }
-.stop-chip--next {
+.progress-fill {
+  display: block;
+  height: 100%;
+  border-radius: var(--radius-full);
   background: var(--green);
-  border-color: var(--green);
-  color: #fff;
+  transition: width 0.3s ease;
+}
+.progress-count {
+  font-size: var(--fs-small);
+  font-weight: 600;
+  color: var(--text-muted);
+  white-space: nowrap;
 }
 .live-gps-row {
   display: flex;
