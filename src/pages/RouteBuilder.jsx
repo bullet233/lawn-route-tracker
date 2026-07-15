@@ -10,11 +10,13 @@ import { today } from '../utils/dates.js'
 import { addRoute, makeStop, routeTemplates } from '../db/routesRepo.js'
 import { optimizeRoute } from '../maps/directions.js'
 import { customersForDay, weekdayLabel } from '../utils/serviceDays.js'
+import { WeekBoard } from './WeekBoard.jsx'
 
 export function RouteBuilder({ session, onStarted }) {
   const { loading, due, doubleUps, customersById } = useDueList(today())
   const templates = useLiveQuery(() => routeTemplates(), [], [])
   const [selected, setSelected] = useState([]) // ordered customerIds
+  const [view, setView] = useState('today') // 'today' | 'week'
   const [starting, setStarting] = useState(false)
   const [optimizing, setOptimizing] = useState(false)
   const [optimizedMiles, setOptimizedMiles] = useState(null)
@@ -119,6 +121,21 @@ export function RouteBuilder({ session, onStarted }) {
     <>
       <h1 className="page-title">Build route</h1>
 
+      <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+        <Pill selected={view === 'today'} onClick={() => setView('today')}>
+          Today
+        </Pill>
+        <Pill selected={view === 'week'} onClick={() => setView('week')}>
+          Plan week
+        </Pill>
+      </div>
+
+      {view === 'week' && (
+        <WeekBoard customersById={customersById} todayWeekday={todaysWeekday} />
+      )}
+
+      {view === 'today' && (
+        <>
       {msg && (
         <div style={{ marginBottom: 12 }}>
           <Banner variant="info" icon="✓">
@@ -246,6 +263,8 @@ export function RouteBuilder({ session, onStarted }) {
               </span>
             )}
           </div>
+        </>
+      )}
         </>
       )}
     </>
