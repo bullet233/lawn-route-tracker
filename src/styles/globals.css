@@ -513,7 +513,7 @@ body {
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: calc(var(--space) * 2);
+  gap: 6px;
   padding: 0;
   border: none;
   background: none;
@@ -522,33 +522,37 @@ body {
   text-align: left;
   min-height: 44px; /* field-size tap target */
 }
+/* top row: grabber centered, stops chip pinned right */
+.route-card__top {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+}
 /* bottom-sheet style grabber — the "this expands" affordance */
 .route-card__grab {
   width: 44px;
   height: 5px;
   border-radius: var(--radius-full);
   background: var(--border-strong);
-  margin: 0 auto;
 }
-/* two big glanceable stats: time left · done by */
-.route-card__stats {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: calc(var(--space) * 3);
-}
-.route-card__big {
-  font-size: var(--fs-title);
-  font-weight: 700;
-  line-height: 1.1;
-}
-.progress-row {
+/* one-line stats: ~1h 18m left · done ~9:16 PM */
+.route-card__line {
   display: flex;
-  align-items: center;
-  gap: calc(var(--space) * 2);
+  align-items: baseline;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-size: var(--fs-card);
+}
+.route-card__meta {
+  margin: 0;
+  font-size: var(--fs-micro);
+  font-weight: 600;
+  color: var(--text-muted);
 }
 .progress-track {
-  flex: 1;
-  height: 10px;
+  display: block;
+  width: 100%;
+  height: 8px;
   border-radius: var(--radius-full);
   background: var(--bg-inset);
   overflow: hidden;
@@ -559,12 +563,6 @@ body {
   border-radius: var(--radius-full);
   background: var(--green);
   transition: width 0.3s ease;
-}
-.progress-count {
-  font-size: var(--fs-small);
-  font-weight: 600;
-  color: var(--text-muted);
-  white-space: nowrap;
 }
 .live-gps-row {
   display: flex;

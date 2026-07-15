@@ -314,17 +314,17 @@ function HeroCard({ phase, state, timers, nameOf, next, remaining, currentPos })
 }
 
 /**
- * Collapsible route card, styled like a bottom sheet: a grabber handle + a
- * chip label are the expand affordance (no arrows). Collapsed: two big stats
- * — time left and the projected finish clock time — over a jobs/driving
- * breakdown and the progress bar. Expanded: the full stop list with addresses
- * and per-stop time estimates.
+ * Collapsible route card, styled like a compact bottom sheet: grabber handle +
+ * a chip label are the expand affordance (no arrows). Collapsed is three tight
+ * rows that keep every stat — "~1h 18m left · done ~9:16 PM", the progress
+ * bar, and a micro meta line ("2/5 done · ~58m jobs · ~20m driving").
+ * Expanded adds the full stop list with addresses and per-stop estimates.
  */
 function RouteCard({ stops, doneCount, eta, now, expanded, onToggle, currentPos }) {
   const noLocation = stops.filter((s) => !s.location).length
-  const parts = []
-  if (eta.jobSecs > 0) parts.push(`${formatMinutes(eta.jobSecs)} jobs`)
-  if (eta.driveSecs > 0) parts.push(`${formatMinutes(eta.driveSecs)} driving`)
+  const meta = [`${doneCount}/${stops.length} done`]
+  if (eta.jobSecs > 0) meta.push(`~${formatMinutes(eta.jobSecs)} jobs`)
+  if (eta.driveSecs > 0) meta.push(`~${formatMinutes(eta.driveSecs)} driving`)
   const pct = stops.length ? Math.round((doneCount / stops.length) * 100) : 0
   const doneBy = new Date(now + eta.totalSecs * 1000).toLocaleTimeString('en-US', {
     hour: 'numeric',
@@ -334,40 +334,32 @@ function RouteCard({ stops, doneCount, eta, now, expanded, onToggle, currentPos 
   return (
     <Card style={{ marginTop: 10 }}>
       <button type="button" className="route-card__head" onClick={onToggle} aria-expanded={expanded}>
-        <span className="route-card__grab" aria-hidden="true" />
-        <div className="live-hero__row" style={{ alignItems: 'center' }}>
-          <div className="stat-tile__label">Route</div>
-          <span className="live-chip">{expanded ? 'Hide' : `${stops.length} stops`}</span>
+        <div className="route-card__top">
+          <span />
+          <span className="route-card__grab" aria-hidden="true" />
+          <span style={{ display: 'flex', justifyContent: 'flex-end' }}>
+            <span className="live-chip">{expanded ? 'Hide' : `${stops.length} stops`}</span>
+          </span>
         </div>
 
         {eta.remainingStops > 0 ? (
-          <>
-            <div className="route-card__stats">
-              <div>
-                <div className="stat-tile__label">Time left</div>
-                <div className="route-card__big tabular">~{formatMinutes(eta.totalSecs)}</div>
-              </div>
-              <div>
-                <div className="stat-tile__label">Done by</div>
-                <div className="route-card__big tabular">~{doneBy}</div>
-              </div>
-            </div>
-            {parts.length > 0 && (
-              <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: 'var(--fs-small)' }}>
-                ~{parts.join(' · ')}
-              </p>
-            )}
-          </>
+          <div className="route-card__line">
+            <strong className="tabular">~{formatMinutes(eta.totalSecs)}</strong>
+            <span style={{ color: 'var(--text-muted)' }}>left</span>
+            <span style={{ color: 'var(--text-muted)' }}>·</span>
+            <span style={{ color: 'var(--text-muted)' }}>done</span>
+            <strong className="tabular">~{doneBy}</strong>
+          </div>
         ) : (
-          <div className="route-card__big">All stops done 🎉</div>
+          <div className="route-card__line">
+            <strong>All stops done 🎉</strong>
+          </div>
         )}
 
-        <div className="progress-row">
-          <span className="progress-track">
-            <span className="progress-fill" style={{ width: `${pct}%` }} />
-          </span>
-          <span className="progress-count tabular">{doneCount}/{stops.length} done</span>
-        </div>
+        <span className="progress-track">
+          <span className="progress-fill" style={{ width: `${pct}%` }} />
+        </span>
+        <p className="route-card__meta">{meta.join(' · ')}</p>
       </button>
 
       {expanded && (
