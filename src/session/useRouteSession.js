@@ -22,6 +22,7 @@ export function useRouteSession() {
   const routeIdRef = useRef(null)
   const lastFixWallRef = useRef(null)
   const lastAccuracyRef = useRef(null)
+  const lastFixRef = useRef(null)
   const weatherRef = useRef(null)
   const traceRef = useRef([])
 
@@ -116,6 +117,8 @@ export function useRouteSession() {
   const pushFix = useCallback((fix) => {
     lastFixWallRef.current = Date.now()
     lastAccuracyRef.current = fix.accuracy ?? null
+    // new object each fix so the map's position effect sees a fresh reference
+    lastFixRef.current = { lat: fix.lat, lng: fix.lng, t: fix.t }
     // record for replay (cheap; a few hundred KB/day) — SPEC §11
     traceRef.current.push({ t: fix.t, lat: fix.lat, lng: fix.lng, accuracy: fix.accuracy ?? null })
     engineRef.current.processFix(fix)
@@ -144,6 +147,7 @@ export function useRouteSession() {
     active,
     gpsLevel,
     fixAgeSecs,
+    lastFix: lastFixRef.current,
     resumePrompt,
     weather,
     startRoute,

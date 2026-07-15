@@ -13,8 +13,41 @@ import { Card, Banner, PrimaryBar, SlideToConfirm, GpsHealthChip } from '../comp
 import { computeTimers } from '../engine/geofenceEngine.js'
 import { formatClock } from '../utils/format.js'
 import { allCustomers } from '../db/customersRepo.js'
+import { activeRoute } from '../db/routesRepo.js'
+import { visitsForDate } from '../db/visitsRepo.js'
+import { today } from '../utils/dates.js'
 import { RouteBuilder } from './RouteBuilder.jsx'
+import { RouteMap } from './RouteMap.jsx'
 import { useGeolocation } from '../session/useGeolocation.js'
+
+/** Native turn-by-turn hand-off — opens the phone's maps app to a destination. */
+function directionsUrl(location) {
+  return `https://www.google.com/maps/dir/?api=1&destination=${location.lat},${location.lng}&travelmode=driving`
+}
+
+/** Ordered route stops joined to customers + today's visited set (SPEC §5). */
+function buildStops(route, customers, todaysVisits) {
+  if (!route) return []
+  const byId = {}
+  for (const c of customers) byId[c.id] = c
+  const visited = new Set((todaysVisits || []).map((v) => v.customerId))
+  const ordered = [...(route.stops || [])].sort((a, b) => a.order - b.order)
+  let nextAssigned = false
+  return ordered.map((stop) => {
+    const c = byId[stop.customerId]
+    const done = visited.has(stop.customerId)
+    const isNext = !done && !nextAssigned
+    if (isNext) nextAssigned = true
+    return {
+      id: stop.customerId,
+      name: c?.name || 'Customer',
+      address: c?.address || '',
+      location: c?.location || null,
+      done,
+      isNext,
+    }
+  })
+}
 
 const DEMO_CENTER = { lat: 40, lng: -75 }
 const DEMO_INSIDE = { ...DEMO_CENTER }
@@ -31,6 +64,8 @@ const demoZone = (customerId) => ({
 
 export function LiveRoute({ session }) {
   const customers = useLiveQuery(() => allCustomers(), [], [])
+  const route = useLiveQuery(() => activeRoute(), [], null)
+  const todaysVisits = useLiveQuery(() => visitsForDate(today()), [], [])
   const nameOf = (id) => customers.find((c) => c.id === id)?.name || 'Customer'
   const { state, active, gpsLevel, resumePrompt } = session
 
@@ -112,6 +147,8 @@ export function LiveRoute({ session }) {
 
       {active && <StateCard phase={phase} state={state} timers={timers} nameOf={nameOf} />}
 
+      {active && <RouteNav route={route} customers={customers} todaysVisits={todaysVisits} currentPos={session.lastFix} />}
+
       {active && !simMode && (
         <label style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 12 }}>
           <input type="checkbox" checked={useGps} onChange={(e) => setUseGps(e.target.checked)} />
@@ -188,6 +225,96 @@ function StateCard({ phase, state, timers, nameOf }) {
       </div>
       <p style={{ color: 'var(--text-muted)', margin: '8px 0 0' }}>En route to the next stop.</p>
     </Card>
+  )
+}
+
+function RouteNav({ route, customers, todaysVisits, currentPos }) {
+  const stops = buildStops(route, customers, todaysVisits)
+  if (stops.length === 0) return null
+
+  const next = stops.find((s) => s.isNext)
+  const remaining = stops.filter((s) => !s.done).length
+  const noLocation = stops.filter((s) => !s.location).length
+
+  return (
+    <div style={{ marginTop: 12 }}>
+      {next && (
+        <Card status="slate" style={{ marginBottom: 10 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+            <div style={{ minWidth: 0 }}>
+              <div className="stat-tile__label">Next stop · {remaining} left</div>
+              <strong style={{ fontSize: 'var(--fs-card)' }}>{next.name}</strong>
+              {next.address && (
+                <p style={{ margin: '2px 0 0', color: 'var(--text-muted)', fontSize: 'var(--fs-small)' }}>
+                  {next.address}
+                </p>
+              )}
+            </div>
+            {next.location ? (
+              <a
+                className="btn btn-primary"
+                href={directionsUrl(next.location)}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ whiteSpace: 'nowrap', textDecoration: 'none' }}
+              >
+                🧭 Navigate
+              </a>
+            ) : (
+              <span style={{ color: 'var(--red)', fontSize: 'var(--fs-small)' }}>No location</span>
+            )}
+          </div>
+        </Card>
+      )}
+
+      <RouteMap stops={stops} currentPos={currentPos} height={260} />
+
+      <Card style={{ marginTop: 10 }}>
+        {stops.map((s, i) => (
+          <div
+            key={s.id}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '8px 0',
+              borderTop: i === 0 ? 'none' : '1px solid var(--border)',
+              opacity: s.done ? 0.55 : 1,
+            }}
+          >
+            <span
+              className="tabular"
+              style={{ width: 22, color: s.done ? 'var(--text-muted)' : s.isNext ? 'var(--green-dark)' : 'var(--text)', fontWeight: 700 }}
+            >
+              {s.done ? '✓' : i + 1}
+            </span>
+            <span style={{ flex: 1, minWidth: 0 }}>
+              {s.name}
+              {s.isNext && <span style={{ color: 'var(--green-dark)', fontSize: 'var(--fs-small)' }}> · next</span>}
+            </span>
+            {s.location ? (
+              <a
+                className="btn btn-secondary"
+                href={directionsUrl(s.location)}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ minHeight: 40, textDecoration: 'none', padding: '0 12px' }}
+              >
+                🧭
+              </a>
+            ) : (
+              <span style={{ color: 'var(--red)', fontSize: 'var(--fs-small)' }}>no loc</span>
+            )}
+          </div>
+        ))}
+        {noLocation > 0 && (
+          <p style={{ margin: '8px 0 0', fontSize: 'var(--fs-small)', color: 'var(--text-muted)' }}>
+            {noLocation} stop{noLocation > 1 ? 's have' : ' has'} no saved location — geocode them on the
+            client’s Location tab to map + navigate.
+          </p>
+        )}
+      </Card>
+    </div>
   )
 }
 
