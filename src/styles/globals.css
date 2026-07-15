@@ -480,6 +480,95 @@ body {
   }
 }
 
+/* ---- Live route (compact field layout, DESIGN §5) ----
+   One status strip, one hero card, map, then a tappable progress strip that
+   expands into the full stop list. Color = state, everything glanceable. */
+.live-strip {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--space) * 2);
+  margin-bottom: calc(var(--space) * 2);
+}
+.live-chip {
+  font-size: var(--fs-small);
+  font-weight: 600;
+  color: var(--text-muted);
+  background: var(--bg-inset);
+  border-radius: var(--radius-full);
+  padding: 4px 10px;
+  white-space: nowrap;
+}
+.live-chip--warn {
+  color: #92400e;
+  background: #fef3c7;
+}
+.live-hero__row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: calc(var(--space) * 2);
+}
+.stop-progress {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: calc(var(--space) * 2);
+  margin-top: calc(var(--space) * 2);
+  padding: 4px 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-family: inherit;
+  min-height: 44px; /* field-size tap target */
+}
+.stop-chips {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  flex: 1;
+  scrollbar-width: none;
+}
+.stop-chips::-webkit-scrollbar {
+  display: none;
+}
+.stop-chip {
+  flex: 0 0 auto;
+  min-width: 32px;
+  height: 32px;
+  border-radius: var(--radius-full);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: var(--fs-small);
+  background: #fff;
+  border: 2px solid var(--border-strong);
+  color: var(--text-muted);
+}
+.stop-chip--done {
+  background: var(--bg-inset);
+  border-color: var(--border);
+}
+.stop-chip--next {
+  background: var(--green);
+  border-color: var(--green);
+  color: #fff;
+}
+.stop-progress__meta {
+  font-size: var(--fs-small);
+  font-weight: 600;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.live-gps-row {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--space) * 2);
+  margin-top: calc(var(--space) * 2);
+  font-size: var(--fs-small);
+  color: var(--text-muted);
+}
+
 /* ---- EPA print sheet (DESIGN §8: a formal record, NOT the app design system) ---- */
 .print-sheet {
   position: fixed;

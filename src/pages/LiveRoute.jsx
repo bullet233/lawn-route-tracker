@@ -1,7 +1,9 @@
-// Live Route (SPEC §5, DESIGN §5) — the engine-state renderer. One dominant
-// state card tints with the phase; GPS health chip floats top-right; a
-// PrimaryBar carries the contextual action. Map tiles are decoration (SPEC §2)
-// so this list-first screen already stands alone offline.
+// Live Route (SPEC §5, DESIGN §5) — the engine-state renderer, compact field
+// layout: one status strip (weather + GPS chips), ONE hero card that merges the
+// phase state with the next stop (while driving the hero IS the next-stop card
+// with the Navigate hand-off), the map, then a tappable progress strip that
+// expands into the full stop list. Map tiles are decoration (SPEC §2) so the
+// screen still stands alone offline.
 //
 // A dev-only fix simulator (import.meta.env.DEV) drives synthetic GPS fixes on
 // a controllable clock so the whole loop is exercisable without a Maps key or
@@ -79,9 +81,14 @@ export function LiveRoute({ session }) {
   }, [active, simMode])
 
   const { error: gpsError } = useGeolocation(session, useGps && !simMode)
+  const [showStops, setShowStops] = useState(false)
 
   const timers = state ? computeTimers(state, clock) : { jobElapsedSecs: 0, driveSecs: 0 }
   const phase = state?.phase || 'idle'
+
+  const stops = buildStops(route, customers, todaysVisits)
+  const next = stops.find((s) => s.isNext)
+  const doneCount = stops.filter((s) => s.done).length
 
   // No active route (and nothing to resume) → nothing to track. The builder
   // lives on the Route tab now; this is just a placeholder + the dev simulator.
@@ -110,10 +117,20 @@ export function LiveRoute({ session }) {
 
   return (
     <div style={{ position: 'relative' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h1 className="page-title" style={{ marginBottom: 8 }}>
-          Live route
+      {/* status strip: title + weather chip + GPS health, one glanceable line */}
+      <div className="live-strip">
+        <h1 className="page-title" style={{ margin: 0 }}>
+          Live
         </h1>
+        <span style={{ flex: 1 }} />
+        {active && session.weather && (
+          <span
+            className={'live-chip' + (session.weather.windMph >= 10 ? ' live-chip--warn' : '')}
+            title={session.weather.windMph >= 10 ? 'High wind — check drift before spraying' : 'Current conditions'}
+          >
+            {session.weather.windMph >= 10 ? '💨' : '🌤️'} {session.weather.tempF}° · {session.weather.windMph} mph
+          </span>
+        )}
         {active && <GpsHealthChip level={gpsLevel} />}
       </div>
 
@@ -133,30 +150,56 @@ export function LiveRoute({ session }) {
         </div>
       )}
 
-      {active && session.weather && (
-        <div style={{ marginBottom: 12 }}>
-          {session.weather.windMph >= 10 ? (
-            <Banner variant="warn" icon="💨">
-              {session.weather.windMph} mph wind — check drift before spraying.
-            </Banner>
-          ) : (
-            <Banner variant="info" icon="🌤️">
-              {session.weather.tempF}°F · {session.weather.windMph} mph wind
-            </Banner>
-          )}
-        </div>
-      )}
-
       {resumePrompt && <ResumeCard session={session} nameOf={nameOf} />}
 
-      {active && <StateCard phase={phase} state={state} timers={timers} nameOf={nameOf} />}
+      {active && (
+        <HeroCard phase={phase} state={state} timers={timers} nameOf={nameOf} next={next} remaining={stops.length - doneCount} />
+      )}
 
-      {active && <RouteNav route={route} customers={customers} todaysVisits={todaysVisits} currentPos={session.lastFix} />}
+      {active && stops.length > 0 && (
+        <>
+          <div style={{ marginTop: 10 }}>
+            <RouteMap stops={stops} currentPos={session.lastFix} height={240} />
+          </div>
+
+          {/* progress strip: one chip per stop, tap to expand the full list */}
+          <button type="button" className="stop-progress" onClick={() => setShowStops((v) => !v)}>
+            <span className="stop-chips">
+              {stops.map((s, i) => (
+                <span
+                  key={s.id}
+                  className={'stop-chip' + (s.done ? ' stop-chip--done' : s.isNext ? ' stop-chip--next' : '')}
+                >
+                  {s.done ? '✓' : i + 1}
+                </span>
+              ))}
+            </span>
+            <span className="stop-progress__meta">
+              {doneCount}/{stops.length} done {showStops ? '▲' : '▼'}
+            </span>
+          </button>
+
+          {showStops && <StopList stops={stops} />}
+
+          {/* leaving a job: quick hand-off to the next house without expanding */}
+          {phase !== 'driving' && next?.location && (
+            <a
+              className="btn btn-secondary"
+              href={directionsUrl(next.location)}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ display: 'flex', justifyContent: 'center', gap: 8, marginTop: 8, textDecoration: 'none' }}
+            >
+              🧭 Next: {next.name}
+            </a>
+          )}
+        </>
+      )}
 
       {active && !simMode && (
-        <label style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 12 }}>
+        <label className="live-gps-row">
           <input type="checkbox" checked={useGps} onChange={(e) => setUseGps(e.target.checked)} />
-          <span>Use my phone's GPS (live tracking)</span>
+          <span>Use phone GPS</span>
         </label>
       )}
 
@@ -192,18 +235,22 @@ export function LiveRoute({ session }) {
   )
 }
 
-function StateCard({ phase, state, timers, nameOf }) {
+/**
+ * The ONE dominant card (DESIGN §5). On site → big job timer. Arriving → hold
+ * countdown. Driving → the hero IS the next-stop card: destination + Navigate
+ * hand-off, with the drive timer tucked in the corner.
+ */
+function HeroCard({ phase, state, timers, nameOf, next, remaining }) {
   if (phase === 'onsite') {
     return (
       <Card status="green">
-        <div className="stat-tile__label">On site</div>
-        <div style={{ fontSize: 'var(--fs-card)', fontWeight: 700, marginBottom: 8 }}>
-          {nameOf(state.activeCustomerId)}
+        <div className="live-hero__row">
+          <div className="stat-tile__label">On site · {nameOf(state.activeCustomerId)}</div>
+          {state.paused && <span style={{ color: 'var(--amber)', fontWeight: 600, fontSize: 'var(--fs-small)' }}>⏸ Paused</span>}
         </div>
-        <div className="tabular" style={{ fontSize: 'var(--fs-hero)', fontWeight: 700, lineHeight: 1 }}>
+        <div className="tabular" style={{ fontSize: 'var(--fs-hero)', fontWeight: 700, lineHeight: 1.05, marginTop: 4 }}>
           {formatClock(timers.jobElapsedSecs)}
         </div>
-        {state.paused && <p style={{ color: 'var(--amber)', margin: '8px 0 0' }}>Paused</p>}
       </Card>
     )
   }
@@ -211,11 +258,9 @@ function StateCard({ phase, state, timers, nameOf }) {
     return (
       <Card status="amber">
         <div className="stat-tile__label">Arriving</div>
-        <div style={{ fontSize: 'var(--fs-title)', fontWeight: 700 }}>
-          {nameOf(state.arrivingCustomerId)}
-        </div>
-        <p style={{ color: 'var(--text-muted)', margin: '8px 0 0' }}>
-          Confirming arrival… hold position to start the job.
+        <div style={{ fontSize: 'var(--fs-title)', fontWeight: 700 }}>{nameOf(state.arrivingCustomerId)}</div>
+        <p style={{ color: 'var(--text-muted)', margin: '6px 0 0', fontSize: 'var(--fs-small)' }}>
+          Hold position — confirming arrival…
         </p>
       </Card>
     )
@@ -223,102 +268,96 @@ function StateCard({ phase, state, timers, nameOf }) {
   // driving
   return (
     <Card status="slate">
-      <div className="stat-tile__label">Driving</div>
-      <div className="tabular" style={{ fontSize: 'var(--fs-hero)', fontWeight: 700, lineHeight: 1 }}>
-        {formatClock(timers.driveSecs)}
+      <div className="live-hero__row">
+        <div className="stat-tile__label">Driving{remaining > 0 ? ` · ${remaining} stop${remaining > 1 ? 's' : ''} left` : ''}</div>
+        <span className="tabular" style={{ fontWeight: 700, color: 'var(--text-muted)' }}>
+          {formatClock(timers.driveSecs)}
+        </span>
       </div>
-      <p style={{ color: 'var(--text-muted)', margin: '8px 0 0' }}>En route to the next stop.</p>
+      {next ? (
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginTop: 6 }}>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 'var(--fs-title)', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {next.name}
+            </div>
+            {next.address && (
+              <p style={{ margin: '2px 0 0', color: 'var(--text-muted)', fontSize: 'var(--fs-small)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {next.address}
+              </p>
+            )}
+          </div>
+          {next.location ? (
+            <a
+              className="btn btn-primary"
+              href={directionsUrl(next.location)}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ whiteSpace: 'nowrap', textDecoration: 'none' }}
+            >
+              🧭 Navigate
+            </a>
+          ) : (
+            <span style={{ color: 'var(--red)', fontSize: 'var(--fs-small)' }}>No location</span>
+          )}
+        </div>
+      ) : (
+        <p style={{ color: 'var(--text-muted)', margin: '6px 0 0', fontSize: 'var(--fs-small)' }}>
+          En route to the next stop.
+        </p>
+      )}
     </Card>
   )
 }
 
-function RouteNav({ route, customers, todaysVisits, currentPos }) {
-  const stops = buildStops(route, customers, todaysVisits)
-  if (stops.length === 0) return null
-
-  const next = stops.find((s) => s.isNext)
-  const remaining = stops.filter((s) => !s.done).length
+/** Expanded stop list (from the progress strip) — per-stop Navigate. */
+function StopList({ stops }) {
   const noLocation = stops.filter((s) => !s.location).length
-
   return (
-    <div style={{ marginTop: 12 }}>
-      {next && (
-        <Card status="slate" style={{ marginBottom: 10 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
-            <div style={{ minWidth: 0 }}>
-              <div className="stat-tile__label">Next stop · {remaining} left</div>
-              <strong style={{ fontSize: 'var(--fs-card)' }}>{next.name}</strong>
-              {next.address && (
-                <p style={{ margin: '2px 0 0', color: 'var(--text-muted)', fontSize: 'var(--fs-small)' }}>
-                  {next.address}
-                </p>
-              )}
-            </div>
-            {next.location ? (
-              <a
-                className="btn btn-primary"
-                href={directionsUrl(next.location)}
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{ whiteSpace: 'nowrap', textDecoration: 'none' }}
-              >
-                🧭 Navigate
-              </a>
-            ) : (
-              <span style={{ color: 'var(--red)', fontSize: 'var(--fs-small)' }}>No location</span>
-            )}
-          </div>
-        </Card>
-      )}
-
-      <RouteMap stops={stops} currentPos={currentPos} height={260} />
-
-      <Card style={{ marginTop: 10 }}>
-        {stops.map((s, i) => (
-          <div
-            key={s.id}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              padding: '8px 0',
-              borderTop: i === 0 ? 'none' : '1px solid var(--border)',
-              opacity: s.done ? 0.55 : 1,
-            }}
+    <Card style={{ marginTop: 4 }}>
+      {stops.map((s, i) => (
+        <div
+          key={s.id}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            padding: '6px 0',
+            borderTop: i === 0 ? 'none' : '1px solid var(--border)',
+            opacity: s.done ? 0.55 : 1,
+          }}
+        >
+          <span
+            className="tabular"
+            style={{ width: 22, color: s.done ? 'var(--text-muted)' : s.isNext ? 'var(--green-dark)' : 'var(--text)', fontWeight: 700 }}
           >
-            <span
-              className="tabular"
-              style={{ width: 22, color: s.done ? 'var(--text-muted)' : s.isNext ? 'var(--green-dark)' : 'var(--text)', fontWeight: 700 }}
+            {s.done ? '✓' : i + 1}
+          </span>
+          <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {s.name}
+            {s.isNext && <span style={{ color: 'var(--green-dark)', fontSize: 'var(--fs-small)' }}> · next</span>}
+          </span>
+          {s.location ? (
+            <a
+              className="btn btn-secondary"
+              href={directionsUrl(s.location)}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ minHeight: 40, textDecoration: 'none', padding: '0 12px' }}
             >
-              {s.done ? '✓' : i + 1}
-            </span>
-            <span style={{ flex: 1, minWidth: 0 }}>
-              {s.name}
-              {s.isNext && <span style={{ color: 'var(--green-dark)', fontSize: 'var(--fs-small)' }}> · next</span>}
-            </span>
-            {s.location ? (
-              <a
-                className="btn btn-secondary"
-                href={directionsUrl(s.location)}
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{ minHeight: 40, textDecoration: 'none', padding: '0 12px' }}
-              >
-                🧭
-              </a>
-            ) : (
-              <span style={{ color: 'var(--red)', fontSize: 'var(--fs-small)' }}>no loc</span>
-            )}
-          </div>
-        ))}
-        {noLocation > 0 && (
-          <p style={{ margin: '8px 0 0', fontSize: 'var(--fs-small)', color: 'var(--text-muted)' }}>
-            {noLocation} stop{noLocation > 1 ? 's have' : ' has'} no saved location — geocode them on the
-            client’s Location tab to map + navigate.
-          </p>
-        )}
-      </Card>
-    </div>
+              🧭
+            </a>
+          ) : (
+            <span style={{ color: 'var(--red)', fontSize: 'var(--fs-small)' }}>no loc</span>
+          )}
+        </div>
+      ))}
+      {noLocation > 0 && (
+        <p style={{ margin: '8px 0 0', fontSize: 'var(--fs-small)', color: 'var(--text-muted)' }}>
+          {noLocation} stop{noLocation > 1 ? 's have' : ' has'} no saved location — geocode them on the
+          client’s Location tab to map + navigate.
+        </p>
+      )}
+    </Card>
   )
 }
 
