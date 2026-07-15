@@ -25,7 +25,13 @@ import { dayJobSeconds, dayDriveSeconds } from './utils/dayReview.js'
 // App shell — bottom tab navigation (DESIGN §4). Home is the dashboard; a
 // full-screen overlay hosts task screens like Day Review.
 
-function Home({ onOpenDayReview, onGoToRoute }) {
+function greeting(hour) {
+  if (hour < 12) return 'Good morning'
+  if (hour < 17) return 'Good afternoon'
+  return 'Good evening'
+}
+
+function Home({ routeActive, onOpenDayReview, onGoToRoute, onGoToLive }) {
   const bd = today()
   const visits = useLiveQuery(() => visitsForDate(bd), [bd], null)
   const { mowingDue, treatmentDue } = useDueList(bd)
@@ -35,44 +41,69 @@ function Home({ onOpenDayReview, onGoToRoute }) {
   const fieldSecs = dayJobSeconds(visits || []) + dayDriveSeconds(visits || [])
   const unreviewed = (visits || []).filter((v) => v.status !== 'skipped' && (v.lineItems || []).length === 0).length
 
+  const dueCount = mowingDue.length + treatmentDue.length
+  const dueParts = []
+  if (mowingDue.length) dueParts.push(`${mowingDue.length} mowing`)
+  if (treatmentDue.length) dueParts.push(`${treatmentDue.length} treatment${treatmentDue.length > 1 ? 's' : ''}`)
+
+  const now = new Date()
+  const dateStr = now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
+
+  // adaptive hero: resume a running route, build the due work, or "caught up"
+  let hero
+  if (routeActive) {
+    hero = { icon: '🚚', title: 'Route in progress', sub: 'Back to live tracking + the map', cta: 'Resume route', onClick: onGoToLive }
+  } else if (dueCount > 0) {
+    hero = { icon: '🌿', title: `${dueCount} stop${dueCount > 1 ? 's' : ''} ready`, sub: `${dueParts.join(' · ')} due today`, cta: 'Build today’s route', onClick: onGoToRoute }
+  } else {
+    hero = { icon: '✅', title: 'All caught up', sub: 'Nothing mowing-due or in a treatment window today', cta: null }
+  }
+
   return (
     <>
-      <h1 className="page-title">Good morning, Dylan</h1>
-      <p style={{ color: 'var(--text-muted)', marginTop: -8 }}>{bd}</p>
+      <h1 className="dash-greeting">{greeting(now.getHours())}, Dylan</h1>
+      <p className="dash-date">{dateStr}</p>
 
-      <div className="stat-grid" style={{ margin: '12px 0 16px' }}>
-        <StatTile label="Today's Revenue" value={formatCents(revenue)} sub={`${completed.length} jobs`} />
-        <StatTile label="Field Time" value={formatMinutes(fieldSecs)} sub="job + drive" />
-        <StatTile label="To review" value={String(unreviewed)} sub="visits need line items" />
+      <Card className={'dash-hero' + (hero.cta ? '' : ' dash-hero--idle')}>
+        <div className="dash-hero__top">
+          <span className="dash-hero__icon" aria-hidden="true">{hero.icon}</span>
+          <div style={{ minWidth: 0 }}>
+            <h2 className="dash-hero__title">{hero.title}</h2>
+            <p className="dash-hero__sub">{hero.sub}</p>
+          </div>
+        </div>
+        {hero.cta && (
+          <button type="button" className="dash-cta" onClick={hero.onClick}>
+            {hero.cta} <span aria-hidden="true">→</span>
+          </button>
+        )}
+      </Card>
+
+      <div className="stat-grid" style={{ margin: '12px 0 0' }}>
+        <StatTile label="Today's revenue" value={formatCents(revenue)} sub={`${completed.length} job${completed.length === 1 ? '' : 's'}`} />
+        <StatTile label="Field time" value={formatMinutes(fieldSecs)} sub="job + drive" />
+        <StatTile label="To review" value={String(unreviewed)} sub="need line items" />
       </div>
 
       {visits && visits.length > 0 && (
-        <Card status={unreviewed > 0 ? 'amber' : 'green'} onClick={onOpenDayReview} style={{ cursor: 'pointer', marginBottom: 12 }}>
+        <Card
+          status={unreviewed > 0 ? 'amber' : 'green'}
+          onClick={onOpenDayReview}
+          style={{ cursor: 'pointer', marginTop: 12 }}
+        >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div>
               <strong>Day Review</strong>
               <p style={{ color: 'var(--text-muted)', margin: '4px 0 0', fontSize: 'var(--fs-small)' }}>
-                {unreviewed > 0 ? `${unreviewed} visit(s) need line items` : 'All visits reviewed'}
+                {unreviewed > 0
+                  ? `${unreviewed} visit${unreviewed > 1 ? 's' : ''} need line items`
+                  : `${completed.length} visit${completed.length === 1 ? '' : 's'} reviewed · ${formatCents(revenue)}`}
               </p>
             </div>
             <span aria-hidden="true">→</span>
           </div>
         </Card>
       )}
-
-      <Card status="green" onClick={onGoToRoute} style={{ cursor: 'pointer', marginBottom: 12 }}>
-        <strong>Mowing due ({mowingDue.length})</strong>
-        <p style={{ color: 'var(--text-muted)', margin: '4px 0 0', fontSize: 'var(--fs-small)' }}>
-          {mowingDue.length ? 'Tap to build a route.' : 'Nothing mowing-due right now.'}
-        </p>
-      </Card>
-
-      <Card status="amber" onClick={onGoToRoute} style={{ cursor: 'pointer' }}>
-        <strong>Treatments in window ({treatmentDue.length})</strong>
-        <p style={{ color: 'var(--text-muted)', margin: '4px 0 0', fontSize: 'var(--fs-small)' }}>
-          {treatmentDue.length ? 'Tap to build a round.' : 'No treatment windows open.'}
-        </p>
-      </Card>
     </>
   )
 }
@@ -116,7 +147,14 @@ export default function App() {
         OVERLAYS[overlay]
       ) : (
         <>
-          {tab === 'home' && <Home onOpenDayReview={() => setOverlay('dayReview')} onGoToRoute={() => goTab('route')} />}
+          {tab === 'home' && (
+            <Home
+              routeActive={session.active}
+              onOpenDayReview={() => setOverlay('dayReview')}
+              onGoToRoute={() => goTab('route')}
+              onGoToLive={() => goTab('live')}
+            />
+          )}
           {tab === 'route' && <RouteBuilder session={session} onStarted={() => goTab('live')} />}
           {tab === 'live' && <LiveRoute session={session} />}
           {tab === 'clients' && <Customers />}

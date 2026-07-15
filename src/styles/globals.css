@@ -573,6 +573,66 @@ body {
   color: var(--text-muted);
 }
 
+/* ---- dashboard hero CTA (DESIGN §6: the morning launchpad) ---- */
+.dash-greeting {
+  margin: 0 0 2px;
+  font-size: var(--fs-title);
+  font-weight: 700;
+}
+.dash-date {
+  margin: 0 0 calc(var(--space) * 4);
+  color: var(--text-muted);
+  font-size: var(--fs-small);
+}
+.dash-hero {
+  padding: calc(var(--space) * 5);
+  background: linear-gradient(135deg, #ecfdf5 0%, var(--bg-card) 60%);
+}
+.dash-hero--idle {
+  background: var(--bg-card);
+}
+.dash-hero__top {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--space) * 3);
+}
+.dash-hero__icon {
+  font-size: 2rem;
+  line-height: 1;
+  flex: 0 0 auto;
+}
+.dash-hero__title {
+  margin: 0;
+  font-size: var(--fs-title);
+  font-weight: 700;
+  line-height: 1.1;
+}
+.dash-hero__sub {
+  margin: 2px 0 0;
+  color: var(--text-muted);
+  font-size: var(--fs-small);
+}
+.dash-cta {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 52px;
+  margin-top: calc(var(--space) * 4);
+  border: none;
+  border-radius: var(--radius-md);
+  background: var(--green);
+  color: #fff;
+  font-weight: 700;
+  font-size: var(--fs-card);
+  font-family: inherit;
+  cursor: pointer;
+}
+.dash-cta:active {
+  background: var(--green-dark);
+}
+
 /* ---- EPA print sheet (DESIGN §8: a formal record, NOT the app design system) ---- */
 .print-sheet {
   position: fixed;
