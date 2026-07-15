@@ -34,7 +34,7 @@ export function mergeServiceOverrides(existing, services, pricesById) {
   const out = { ...(existing || {}) }
   for (const s of services || []) {
     const typed = pricesById?.[s.id]
-    const { priceCents, ...rest } = out[s.id] || {}
+    const { priceCents: _dropped, ...rest } = out[s.id] || {}
     if (typed == null || typed === s.defaultPriceCents) {
       // No custom price: keep other flags if any, else remove the entry entirely.
       if (Object.keys(rest).length) out[s.id] = rest

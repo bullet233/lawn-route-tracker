@@ -1,7 +1,6 @@
 // Route overview map (SPEC §5) — numbered pins for each stop in order, the
 // route line between them, and the operator's live GPS position. This is the
-// "where am I / where's the next house" view during a route; actual turn-by-turn
-// is handed off to the phone's native maps app (see directionsUrl in LiveRoute).
+// "where am I / where's the next house" wayfinding view during a route.
 //
 // Map tiles are an enhancement, not load-bearing: if the Maps JS fails (no key,
 // referrer block, offline) the parent still shows the stop list + Navigate

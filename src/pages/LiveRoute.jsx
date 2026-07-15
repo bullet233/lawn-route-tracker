@@ -20,10 +20,13 @@ import { visitsForDate } from '../db/visitsRepo.js'
 import { today } from '../utils/dates.js'
 import { RouteMap } from './RouteMap.jsx'
 import { useGeolocation } from '../session/useGeolocation.js'
+import { haversineMeters, metersToMiles } from '../engine/geo.js'
 
-/** Native turn-by-turn hand-off — opens the phone's maps app to a destination. */
-function directionsUrl(location) {
-  return `https://www.google.com/maps/dir/?api=1&destination=${location.lat},${location.lng}&travelmode=driving`
+/** "0.8 mi" straight-line distance from the current fix to a stop, or null. */
+function milesAway(from, to) {
+  if (!from || !to) return null
+  const mi = metersToMiles(haversineMeters(from, to))
+  return mi >= 10 ? `${Math.round(mi)} mi` : `${mi.toFixed(1)} mi`
 }
 
 /** Ordered route stops joined to customers + today's visited set (SPEC §5). */
@@ -153,13 +156,21 @@ export function LiveRoute({ session }) {
       {resumePrompt && <ResumeCard session={session} nameOf={nameOf} />}
 
       {active && (
-        <HeroCard phase={phase} state={state} timers={timers} nameOf={nameOf} next={next} remaining={stops.length - doneCount} />
+        <HeroCard
+          phase={phase}
+          state={state}
+          timers={timers}
+          nameOf={nameOf}
+          next={next}
+          remaining={stops.length - doneCount}
+          currentPos={session.lastFix}
+        />
       )}
 
       {active && stops.length > 0 && (
         <>
           <div style={{ marginTop: 10 }}>
-            <RouteMap stops={stops} currentPos={session.lastFix} height={240} />
+            <RouteMap stops={stops} currentPos={session.lastFix} height={260} />
           </div>
 
           {/* progress strip: one chip per stop, tap to expand the full list */}
@@ -175,24 +186,11 @@ export function LiveRoute({ session }) {
               ))}
             </span>
             <span className="stop-progress__meta">
-              {doneCount}/{stops.length} done {showStops ? '▲' : '▼'}
+              {doneCount}/{stops.length} done · {showStops ? 'Hide stops ▲' : 'Stops ▼'}
             </span>
           </button>
 
-          {showStops && <StopList stops={stops} />}
-
-          {/* leaving a job: quick hand-off to the next house without expanding */}
-          {phase !== 'driving' && next?.location && (
-            <a
-              className="btn btn-secondary"
-              href={directionsUrl(next.location)}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{ display: 'flex', justifyContent: 'center', gap: 8, marginTop: 8, textDecoration: 'none' }}
-            >
-              🧭 Next: {next.name}
-            </a>
-          )}
+          {showStops && <StopList stops={stops} currentPos={session.lastFix} />}
         </>
       )}
 
@@ -236,11 +234,11 @@ export function LiveRoute({ session }) {
 }
 
 /**
- * The ONE dominant card (DESIGN §5). On site → big job timer. Arriving → hold
- * countdown. Driving → the hero IS the next-stop card: destination + Navigate
- * hand-off, with the drive timer tucked in the corner.
+ * The ONE dominant card (DESIGN §5). On site → big job timer + a muted "next
+ * up" hint. Arriving → hold countdown. Driving → destination big, with the
+ * straight-line distance from the live fix and the drive timer in the corner.
  */
-function HeroCard({ phase, state, timers, nameOf, next, remaining }) {
+function HeroCard({ phase, state, timers, nameOf, next, remaining, currentPos }) {
   if (phase === 'onsite') {
     return (
       <Card status="green">
@@ -251,6 +249,11 @@ function HeroCard({ phase, state, timers, nameOf, next, remaining }) {
         <div className="tabular" style={{ fontSize: 'var(--fs-hero)', fontWeight: 700, lineHeight: 1.05, marginTop: 4 }}>
           {formatClock(timers.jobElapsedSecs)}
         </div>
+        {next && (
+          <p style={{ color: 'var(--text-muted)', margin: '6px 0 0', fontSize: 'var(--fs-small)' }}>
+            Next up: {next.name}
+          </p>
+        )}
       </Card>
     )
   }
@@ -266,6 +269,7 @@ function HeroCard({ phase, state, timers, nameOf, next, remaining }) {
     )
   }
   // driving
+  const away = next ? milesAway(currentPos, next.location) : null
   return (
     <Card status="slate">
       <div className="live-hero__row">
@@ -275,29 +279,21 @@ function HeroCard({ phase, state, timers, nameOf, next, remaining }) {
         </span>
       </div>
       {next ? (
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginTop: 6 }}>
-          <div style={{ minWidth: 0 }}>
+        <div style={{ marginTop: 6, minWidth: 0 }}>
+          <div className="live-hero__row" style={{ alignItems: 'baseline' }}>
             <div style={{ fontSize: 'var(--fs-title)', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {next.name}
             </div>
-            {next.address && (
-              <p style={{ margin: '2px 0 0', color: 'var(--text-muted)', fontSize: 'var(--fs-small)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {next.address}
-              </p>
+            {away && (
+              <span className="tabular" style={{ color: 'var(--green-dark)', fontWeight: 700, whiteSpace: 'nowrap' }}>
+                {away}
+              </span>
             )}
           </div>
-          {next.location ? (
-            <a
-              className="btn btn-primary"
-              href={directionsUrl(next.location)}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{ whiteSpace: 'nowrap', textDecoration: 'none' }}
-            >
-              🧭 Navigate
-            </a>
-          ) : (
-            <span style={{ color: 'var(--red)', fontSize: 'var(--fs-small)' }}>No location</span>
+          {next.address && (
+            <p style={{ margin: '2px 0 0', color: 'var(--text-muted)', fontSize: 'var(--fs-small)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {next.address}
+            </p>
           )}
         </div>
       ) : (
@@ -309,52 +305,50 @@ function HeroCard({ phase, state, timers, nameOf, next, remaining }) {
   )
 }
 
-/** Expanded stop list (from the progress strip) — per-stop Navigate. */
-function StopList({ stops }) {
+/** Expanded stop list (from the progress strip) — name + address per row. */
+function StopList({ stops, currentPos }) {
   const noLocation = stops.filter((s) => !s.location).length
   return (
     <Card style={{ marginTop: 4 }}>
-      {stops.map((s, i) => (
-        <div
-          key={s.id}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-            padding: '6px 0',
-            borderTop: i === 0 ? 'none' : '1px solid var(--border)',
-            opacity: s.done ? 0.55 : 1,
-          }}
-        >
-          <span
-            className="tabular"
-            style={{ width: 22, color: s.done ? 'var(--text-muted)' : s.isNext ? 'var(--green-dark)' : 'var(--text)', fontWeight: 700 }}
+      {stops.map((s, i) => {
+        const away = !s.done && s.isNext ? milesAway(currentPos, s.location) : null
+        return (
+          <div
+            key={s.id}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '7px 0',
+              borderTop: i === 0 ? 'none' : '1px solid var(--border)',
+              opacity: s.done ? 0.55 : 1,
+            }}
           >
-            {s.done ? '✓' : i + 1}
-          </span>
-          <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {s.name}
-            {s.isNext && <span style={{ color: 'var(--green-dark)', fontSize: 'var(--fs-small)' }}> · next</span>}
-          </span>
-          {s.location ? (
-            <a
-              className="btn btn-secondary"
-              href={directionsUrl(s.location)}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{ minHeight: 40, textDecoration: 'none', padding: '0 12px' }}
+            <span
+              className="tabular"
+              style={{ width: 22, color: s.done ? 'var(--text-muted)' : s.isNext ? 'var(--green-dark)' : 'var(--text)', fontWeight: 700 }}
             >
-              🧭
-            </a>
-          ) : (
-            <span style={{ color: 'var(--red)', fontSize: 'var(--fs-small)' }}>no loc</span>
-          )}
-        </div>
-      ))}
+              {s.done ? '✓' : i + 1}
+            </span>
+            <span style={{ flex: 1, minWidth: 0 }}>
+              <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: s.isNext ? 700 : 400 }}>
+                {s.name}
+                {s.isNext && <span style={{ color: 'var(--green-dark)', fontSize: 'var(--fs-small)', fontWeight: 600 }}> · next{away ? ` · ${away}` : ''}</span>}
+              </span>
+              {s.address && (
+                <span style={{ display: 'block', color: 'var(--text-muted)', fontSize: 'var(--fs-small)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {s.address}
+                </span>
+              )}
+            </span>
+            {!s.location && <span style={{ color: 'var(--red)', fontSize: 'var(--fs-small)' }}>no location</span>}
+          </div>
+        )
+      })}
       {noLocation > 0 && (
         <p style={{ margin: '8px 0 0', fontSize: 'var(--fs-small)', color: 'var(--text-muted)' }}>
           {noLocation} stop{noLocation > 1 ? 's have' : ' has'} no saved location — geocode them on the
-          client’s Location tab to map + navigate.
+          client’s Location tab to show them on the map.
         </p>
       )}
     </Card>
