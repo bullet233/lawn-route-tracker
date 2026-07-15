@@ -27,7 +27,7 @@ export function loadGoogleMaps() {
       return
     }
     const script = document.createElement('script')
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${key}&libraries=geometry`
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${key}&libraries=geometry,places`
     script.async = true
     script.defer = true
     script.onload = () => {

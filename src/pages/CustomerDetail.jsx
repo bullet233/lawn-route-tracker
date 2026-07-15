@@ -29,6 +29,7 @@ import {
 } from '../utils/customerServices.js'
 import { shapeCustomerFertilizer } from '../utils/customerFertilizer.js'
 import { WEEKDAYS } from '../utils/serviceDays.js'
+import { AddressAutocomplete } from '../components/AddressAutocomplete.jsx'
 import { geocodeAddress } from '../maps/geocode.js'
 import { ZoneEditor } from './ZoneEditor.jsx'
 import { ComplianceLogModal } from './ComplianceLogModal.jsx'
@@ -108,10 +109,10 @@ function DetailsTab({ customer, onDeleted }) {
         </label>
         <label style={{ display: 'block', marginBottom: 12 }}>
           <span className="input-label">Address</span>
-          <input
-            className="input-field"
+          <AddressAutocomplete
             value={form.address || ''}
-            onChange={(e) => set({ address: e.target.value })}
+            onChange={(v) => set({ address: v })}
+            placeholder="Start typing an address…"
           />
         </label>
         <div className="grid-2" style={{ marginBottom: 12 }}>

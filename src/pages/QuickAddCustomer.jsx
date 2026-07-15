@@ -4,6 +4,7 @@
 
 import { useState } from 'react'
 import { Modal, UnitField } from '../components/ui/index.js'
+import { AddressAutocomplete } from '../components/AddressAutocomplete.jsx'
 import { addCustomer } from '../db/customersRepo.js'
 
 export function QuickAddCustomer({ onClose, onAdded }) {
@@ -50,12 +51,7 @@ export function QuickAddCustomer({ onClose, onAdded }) {
       </label>
       <label style={{ display: 'block', marginBottom: 12 }}>
         <span className="input-label">Address</span>
-        <input
-          className="input-field"
-          value={address}
-          onChange={(e) => setAddress(e.target.value)}
-          placeholder="Street address"
-        />
+        <AddressAutocomplete value={address} onChange={setAddress} placeholder="Start typing an address…" />
       </label>
       <label style={{ display: 'block', marginBottom: 12 }}>
         <span className="input-label">Phone</span>

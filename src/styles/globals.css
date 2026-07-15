@@ -687,6 +687,39 @@ body {
   background: #f1f5f9;
   border-bottom: 1px solid #cbd5e1;
 }
+/* Address autocomplete dropdown */
+.addr-ac {
+  position: relative;
+}
+.addr-ac__list {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 50;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.14);
+  max-height: 260px;
+  overflow-y: auto;
+}
+.addr-ac__item {
+  padding: 10px 10px;
+  border-radius: 6px;
+  font-size: var(--fs-small);
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.addr-ac__item--active {
+  background: var(--bg-inset);
+}
+
 /* Week board (weekly routing) — drag clients onto a mowing-day card */
 .week-grid {
   display: grid;
