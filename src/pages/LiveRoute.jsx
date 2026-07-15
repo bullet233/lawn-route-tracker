@@ -9,14 +9,13 @@
 
 import { useEffect, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { Card, Banner, PrimaryBar, SlideToConfirm, GpsHealthChip } from '../components/ui/index.js'
+import { Card, Banner, EmptyState, PrimaryBar, SlideToConfirm, GpsHealthChip } from '../components/ui/index.js'
 import { computeTimers } from '../engine/geofenceEngine.js'
 import { formatClock } from '../utils/format.js'
 import { allCustomers } from '../db/customersRepo.js'
 import { activeRoute } from '../db/routesRepo.js'
 import { visitsForDate } from '../db/visitsRepo.js'
 import { today } from '../utils/dates.js'
-import { RouteBuilder } from './RouteBuilder.jsx'
 import { RouteMap } from './RouteMap.jsx'
 import { useGeolocation } from '../session/useGeolocation.js'
 
@@ -84,11 +83,16 @@ export function LiveRoute({ session }) {
   const timers = state ? computeTimers(state, clock) : { jobElapsedSecs: 0, driveSecs: 0 }
   const phase = state?.phase || 'idle'
 
-  // Idle (no active route, no resume prompt) → the Route Builder lives here.
+  // No active route (and nothing to resume) → nothing to track. The builder
+  // lives on the Route tab now; this is just a placeholder + the dev simulator.
   if (!active && !resumePrompt) {
     return (
       <div style={{ position: 'relative' }}>
-        <RouteBuilder session={session} onStarted={() => {}} />
+        <h1 className="page-title">Live route</h1>
+        <EmptyState>
+          No active route. Build one on the Route tab — tracking, the map, and turn-by-turn appear
+          here once it starts.
+        </EmptyState>
         {import.meta.env.DEV && (
           <Simulator
             session={session}
@@ -108,7 +112,7 @@ export function LiveRoute({ session }) {
     <div style={{ position: 'relative' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <h1 className="page-title" style={{ marginBottom: 8 }}>
-          Route
+          Live route
         </h1>
         {active && <GpsHealthChip level={gpsLevel} />}
       </div>

@@ -1,18 +1,21 @@
-// TabBar — bottom navigation, 5 tabs, always visible except inside modals
-// (DESIGN §4). Route tab shows a green dot when a route is active.
+// TabBar — bottom navigation (DESIGN §4). The Route tab is the route builder;
+// a separate Live tab (the active-route tracking + map) appears only while a
+// route is running or awaiting resume, and carries the green active-dot.
 
 const TABS = [
   { key: 'home', label: 'Home', icon: '🏠' },
   { key: 'route', label: 'Route', icon: '🚚' },
+  { key: 'live', label: 'Live', icon: '📍', liveOnly: true },
   { key: 'clients', label: 'Clients', icon: '👥' },
   { key: 'treatments', label: 'Treatments', icon: '🌱' },
   { key: 'more', label: 'More', icon: '⋯' },
 ]
 
-export function TabBar({ active, onChange, routeActive = false }) {
+export function TabBar({ active, onChange, routeActive = false, showLive = false }) {
+  const tabs = TABS.filter((t) => !t.liveOnly || showLive)
   return (
     <nav className="tab-bar">
-      {TABS.map((t) => (
+      {tabs.map((t) => (
         <button
           key={t.key}
           type="button"
@@ -23,7 +26,7 @@ export function TabBar({ active, onChange, routeActive = false }) {
             {t.icon}
           </span>
           {t.label}
-          {t.key === 'route' && routeActive && <span className="tab-bar__dot" aria-hidden="true" />}
+          {t.key === 'live' && routeActive && <span className="tab-bar__dot" aria-hidden="true" />}
         </button>
       ))}
     </nav>

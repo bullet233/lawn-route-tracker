@@ -6,6 +6,7 @@ import { formatMinutes } from './utils/format.js'
 import { today } from './utils/dates.js'
 import { Customers } from './pages/Customers.jsx'
 import { LiveRoute } from './pages/LiveRoute.jsx'
+import { RouteBuilder } from './pages/RouteBuilder.jsx'
 import { DayReview } from './pages/DayReview.jsx'
 import { Treatments } from './pages/Treatments.jsx'
 import { More } from './pages/More.jsx'
@@ -91,6 +92,14 @@ export default function App() {
     setTab(t)
   }
 
+  // The Live tab only exists while a route is running (or awaiting resume) — in
+  // dev it stays reachable so the fix simulator can start a demo. If it's the
+  // current tab when it disappears, fall back to the builder.
+  const showLive = session.active || !!session.resumePrompt || import.meta.env.DEV
+  useEffect(() => {
+    if (tab === 'live' && !showLive) setTab('route')
+  }, [tab, showLive])
+
   const closeOverlay = () => setOverlay(null)
 
   const OVERLAYS = {
@@ -108,13 +117,14 @@ export default function App() {
       ) : (
         <>
           {tab === 'home' && <Home onOpenDayReview={() => setOverlay('dayReview')} onGoToRoute={() => goTab('route')} />}
-          {tab === 'route' && <LiveRoute session={session} />}
+          {tab === 'route' && <RouteBuilder session={session} onStarted={() => goTab('live')} />}
+          {tab === 'live' && <LiveRoute session={session} />}
           {tab === 'clients' && <Customers />}
           {tab === 'treatments' && <Treatments />}
           {tab === 'more' && <More onOpen={setOverlay} />}
         </>
       )}
-      <TabBar active={tab} onChange={goTab} routeActive={session.active} />
+      <TabBar active={tab} onChange={goTab} routeActive={session.active} showLive={showLive} />
     </div>
   )
 }
