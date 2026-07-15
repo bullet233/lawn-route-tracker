@@ -522,18 +522,18 @@ body {
   text-align: left;
   min-height: 44px; /* field-size tap target */
 }
-/* top row: grabber centered, stops chip pinned right */
-.route-card__top {
-  display: grid;
-  grid-template-columns: 1fr auto 1fr;
-  align-items: center;
-}
-/* bottom-sheet style grabber — the "this expands" affordance */
+/* bottom-sheet grabber = the only affordance: grows + goes green when open */
 .route-card__grab {
-  width: 44px;
+  align-self: center;
+  width: 40px;
   height: 5px;
   border-radius: var(--radius-full);
   background: var(--border-strong);
+  transition: background 0.2s ease, width 0.2s ease;
+}
+.route-card__grab--open {
+  width: 60px;
+  background: var(--green);
 }
 /* one-line stats: ~1h 18m left · done ~9:16 PM */
 .route-card__line {

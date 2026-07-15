@@ -334,13 +334,7 @@ function RouteCard({ stops, doneCount, eta, now, expanded, onToggle, currentPos 
   return (
     <Card style={{ marginTop: 10 }}>
       <button type="button" className="route-card__head" onClick={onToggle} aria-expanded={expanded}>
-        <div className="route-card__top">
-          <span />
-          <span className="route-card__grab" aria-hidden="true" />
-          <span style={{ display: 'flex', justifyContent: 'flex-end' }}>
-            <span className="live-chip">{expanded ? 'Hide' : `${stops.length} stops`}</span>
-          </span>
-        </div>
+        <span className={'route-card__grab' + (expanded ? ' route-card__grab--open' : '')} aria-hidden="true" />
 
         {eta.remainingStops > 0 ? (
           <div className="route-card__line">
