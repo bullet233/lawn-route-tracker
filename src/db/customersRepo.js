@@ -24,6 +24,7 @@ export function makeCustomer(input = {}, now = Date.now()) {
     fencedBackyard: !!input.fencedBackyard,
     propertyNotes: input.propertyNotes || '',
     mowingIntervalDays: input.mowingIntervalDays ?? null,
+    serviceDay: input.serviceDay ?? null,
     holdUntil: input.holdUntil || null,
     excludeFromAnalytics: !!input.excludeFromAnalytics,
     specialApplications: input.specialApplications || '',

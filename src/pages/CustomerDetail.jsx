@@ -28,6 +28,7 @@ import {
   mergeServiceOverrides,
 } from '../utils/customerServices.js'
 import { shapeCustomerFertilizer } from '../utils/customerFertilizer.js'
+import { WEEKDAYS } from '../utils/serviceDays.js'
 import { geocodeAddress } from '../maps/geocode.js'
 import { ZoneEditor } from './ZoneEditor.jsx'
 import { ComplianceLogModal } from './ComplianceLogModal.jsx'
@@ -82,6 +83,7 @@ function DetailsTab({ customer, onDeleted }) {
       email: form.email,
       lawnSqFt: form.lawnSqFt,
       mowingIntervalDays: form.mowingIntervalDays,
+      serviceDay: form.serviceDay ?? null,
       terrain: form.terrain,
       obstacleCount: form.obstacleCount,
       fencedBackyard: form.fencedBackyard,
@@ -132,6 +134,21 @@ function DetailsTab({ customer, onDeleted }) {
             min={1}
           />
         </div>
+        <label style={{ display: 'block', marginBottom: 12 }}>
+          <span className="input-label">Service day</span>
+          <select
+            className="input-field"
+            value={form.serviceDay ?? ''}
+            onChange={(e) => set({ serviceDay: e.target.value === '' ? null : Number(e.target.value) })}
+          >
+            <option value="">No fixed day</option>
+            {WEEKDAYS.map((d) => (
+              <option key={d.value} value={d.value}>
+                {d.label}
+              </option>
+            ))}
+          </select>
+        </label>
         <div className="grid-2" style={{ marginBottom: 12 }}>
           <label style={{ display: 'block' }}>
             <span className="input-label">Terrain</span>

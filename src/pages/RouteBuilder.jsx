@@ -9,6 +9,7 @@ import { useDueList } from '../hooks/useDueList.js'
 import { today } from '../utils/dates.js'
 import { addRoute, makeStop, routeTemplates } from '../db/routesRepo.js'
 import { optimizeRoute } from '../maps/directions.js'
+import { customersForDay, weekdayLabel } from '../utils/serviceDays.js'
 
 export function RouteBuilder({ session, onStarted }) {
   const { loading, due, doubleUps, customersById } = useDueList(today())
@@ -22,11 +23,23 @@ export function RouteBuilder({ session, onStarted }) {
 
   if (loading) return <p style={{ color: 'var(--text-muted)' }}>Loading due list…</p>
 
+  // Weekly routing: customers assigned to today's weekday (SPEC §7). One tap
+  // loads the whole day's list into the same select → optimize → start flow.
+  const todaysWeekday = new Date().getDay()
+  const dayCustomers = customersForDay(Object.values(customersById), todaysWeekday)
+
   // Load a saved template's stops (in order), dropping any deleted customers.
   const loadTemplate = (tpl) => {
     setSelected(tpl.stops.map((s) => s.customerId).filter((id) => customersById[id]))
     setOptimizedMiles(null)
     setMsg(`Loaded "${tpl.name}"`)
+  }
+
+  // Load today's fixed-day customers as the route (replaces the current pick).
+  const loadDay = () => {
+    setSelected(dayCustomers.map((c) => c.id))
+    setOptimizedMiles(null)
+    setMsg(`Loaded ${weekdayLabel(todaysWeekday)} · ${dayCustomers.length} stop${dayCustomers.length === 1 ? '' : 's'}`)
   }
 
   async function saveTemplate() {
@@ -112,6 +125,17 @@ export function RouteBuilder({ session, onStarted }) {
             {msg}
           </Banner>
         </div>
+      )}
+
+      {dayCustomers.length > 0 && (
+        <>
+          <SectionTitle icon="📅">
+            {weekdayLabel(todaysWeekday)}’s route
+          </SectionTitle>
+          <button type="button" className="btn btn-primary" onClick={loadDay} style={{ marginBottom: 12 }}>
+            📅 Load {weekdayLabel(todaysWeekday)} ({dayCustomers.length})
+          </button>
+        </>
       )}
 
       {templates.length > 0 && (
