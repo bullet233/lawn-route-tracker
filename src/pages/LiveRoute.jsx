@@ -13,11 +13,15 @@ import { useEffect, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { Card, Banner, EmptyState, PrimaryBar, SlideToConfirm, GpsHealthChip } from '../components/ui/index.js'
 import { computeTimers } from '../engine/geofenceEngine.js'
-import { formatClock } from '../utils/format.js'
+import { formatClock, formatMinutes } from '../utils/format.js'
+import { db } from '../db/index.js'
 import { allCustomers } from '../db/customersRepo.js'
 import { activeRoute } from '../db/routesRepo.js'
 import { visitsForDate } from '../db/visitsRepo.js'
 import { today } from '../utils/dates.js'
+import { indexById } from '../utils/dueSelectors.js'
+import { fitMowDurationModel } from '../utils/pricingModel.js'
+import { estimateRouteRemaining, averageVisitSecs } from '../utils/routeEta.js'
 import { RouteMap } from './RouteMap.jsx'
 import { useGeolocation } from '../session/useGeolocation.js'
 import { haversineMeters, metersToMiles } from '../engine/geo.js'
@@ -92,6 +96,19 @@ export function LiveRoute({ session }) {
   const stops = buildStops(route, customers, todaysVisits)
   const next = stops.find((s) => s.isNext)
   const doneCount = stops.filter((s) => s.done).length
+
+  // remaining-time estimate: model-predicted job time per stop + drive legs
+  const allVisits = useLiveQuery(() => db.visits.toArray(), [], [])
+  const customersById = indexById(customers)
+  const eta = estimateRouteRemaining({
+    stops,
+    customersById,
+    model: fitMowDurationModel(allVisits, customersById),
+    fallbackJobSecs: averageVisitSecs(allVisits),
+    currentPos: session.lastFix,
+    activeCustomerId: state?.activeCustomerId || null,
+    activeElapsedSecs: timers.jobElapsedSecs,
+  })
 
   // No active route (and nothing to resume) → nothing to track. The builder
   // lives on the Route tab now; this is just a placeholder + the dev simulator.
@@ -173,24 +190,14 @@ export function LiveRoute({ session }) {
             <RouteMap stops={stops} currentPos={session.lastFix} height={260} />
           </div>
 
-          {/* progress strip: one chip per stop, tap to expand the full list */}
-          <button type="button" className="stop-progress" onClick={() => setShowStops((v) => !v)}>
-            <span className="stop-chips">
-              {stops.map((s, i) => (
-                <span
-                  key={s.id}
-                  className={'stop-chip' + (s.done ? ' stop-chip--done' : s.isNext ? ' stop-chip--next' : '')}
-                >
-                  {s.done ? '✓' : i + 1}
-                </span>
-              ))}
-            </span>
-            <span className="stop-progress__meta">
-              {doneCount}/{stops.length} done · {showStops ? 'Hide stops ▲' : 'Stops ▼'}
-            </span>
-          </button>
-
-          {showStops && <StopList stops={stops} currentPos={session.lastFix} />}
+          <RouteCard
+            stops={stops}
+            doneCount={doneCount}
+            eta={eta}
+            expanded={showStops}
+            onToggle={() => setShowStops((v) => !v)}
+            currentPos={session.lastFix}
+          />
         </>
       )}
 
@@ -305,51 +312,98 @@ function HeroCard({ phase, state, timers, nameOf, next, remaining, currentPos })
   )
 }
 
-/** Expanded stop list (from the progress strip) — name + address per row. */
-function StopList({ stops, currentPos }) {
+/**
+ * Collapsible route card. Collapsed: progress chips + "~1h 20m left" with a
+ * jobs/driving breakdown. Expanded: the full stop list with addresses and
+ * per-stop time estimates.
+ */
+function RouteCard({ stops, doneCount, eta, expanded, onToggle, currentPos }) {
   const noLocation = stops.filter((s) => !s.location).length
+  const parts = []
+  if (eta.jobSecs > 0) parts.push(`${formatMinutes(eta.jobSecs)} jobs`)
+  if (eta.driveSecs > 0) parts.push(`${formatMinutes(eta.driveSecs)} driving`)
+
   return (
-    <Card style={{ marginTop: 4 }}>
-      {stops.map((s, i) => {
-        const away = !s.done && s.isNext ? milesAway(currentPos, s.location) : null
-        return (
-          <div
+    <Card style={{ marginTop: 10 }}>
+      <button type="button" className="route-card__head" onClick={onToggle}>
+        <div style={{ minWidth: 0 }}>
+          <div className="stat-tile__label">Route · {doneCount}/{stops.length} done</div>
+          <strong style={{ fontSize: 'var(--fs-card)' }}>
+            {eta.remainingStops > 0 ? `~${formatMinutes(eta.totalSecs)} left` : 'All stops done 🎉'}
+          </strong>
+          {eta.remainingStops > 0 && parts.length > 0 && (
+            <p style={{ margin: '2px 0 0', color: 'var(--text-muted)', fontSize: 'var(--fs-small)' }}>
+              ~{parts.join(' · ')}
+            </p>
+          )}
+        </div>
+        <span style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-small)', fontWeight: 600, whiteSpace: 'nowrap' }}>
+          {expanded ? 'Hide ▲' : 'Stops ▼'}
+        </span>
+      </button>
+
+      <div className="stop-chips" style={{ marginTop: 8 }}>
+        {stops.map((s, i) => (
+          <span
             key={s.id}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              padding: '7px 0',
-              borderTop: i === 0 ? 'none' : '1px solid var(--border)',
-              opacity: s.done ? 0.55 : 1,
-            }}
+            className={'stop-chip' + (s.done ? ' stop-chip--done' : s.isNext ? ' stop-chip--next' : '')}
           >
-            <span
-              className="tabular"
-              style={{ width: 22, color: s.done ? 'var(--text-muted)' : s.isNext ? 'var(--green-dark)' : 'var(--text)', fontWeight: 700 }}
-            >
-              {s.done ? '✓' : i + 1}
-            </span>
-            <span style={{ flex: 1, minWidth: 0 }}>
-              <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: s.isNext ? 700 : 400 }}>
-                {s.name}
-                {s.isNext && <span style={{ color: 'var(--green-dark)', fontSize: 'var(--fs-small)', fontWeight: 600 }}> · next{away ? ` · ${away}` : ''}</span>}
-              </span>
-              {s.address && (
-                <span style={{ display: 'block', color: 'var(--text-muted)', fontSize: 'var(--fs-small)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {s.address}
+            {s.done ? '✓' : i + 1}
+          </span>
+        ))}
+      </div>
+
+      {expanded && (
+        <div style={{ marginTop: 8 }}>
+          {stops.map((s, i) => {
+            const away = !s.done && s.isNext ? milesAway(currentPos, s.location) : null
+            const est = !s.done ? eta.perStopJobSecs[s.id] : null
+            return (
+              <div
+                key={s.id}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  padding: '7px 0',
+                  borderTop: '1px solid var(--border)',
+                  opacity: s.done ? 0.55 : 1,
+                }}
+              >
+                <span
+                  className="tabular"
+                  style={{ width: 22, color: s.done ? 'var(--text-muted)' : s.isNext ? 'var(--green-dark)' : 'var(--text)', fontWeight: 700 }}
+                >
+                  {s.done ? '✓' : i + 1}
                 </span>
-              )}
-            </span>
-            {!s.location && <span style={{ color: 'var(--red)', fontSize: 'var(--fs-small)' }}>no location</span>}
-          </div>
-        )
-      })}
-      {noLocation > 0 && (
-        <p style={{ margin: '8px 0 0', fontSize: 'var(--fs-small)', color: 'var(--text-muted)' }}>
-          {noLocation} stop{noLocation > 1 ? 's have' : ' has'} no saved location — geocode them on the
-          client’s Location tab to show them on the map.
-        </p>
+                <span style={{ flex: 1, minWidth: 0 }}>
+                  <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: s.isNext ? 700 : 400 }}>
+                    {s.name}
+                    {s.isNext && <span style={{ color: 'var(--green-dark)', fontSize: 'var(--fs-small)', fontWeight: 600 }}> · next{away ? ` · ${away}` : ''}</span>}
+                  </span>
+                  {s.address && (
+                    <span style={{ display: 'block', color: 'var(--text-muted)', fontSize: 'var(--fs-small)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {s.address}
+                    </span>
+                  )}
+                </span>
+                {!s.location ? (
+                  <span style={{ color: 'var(--red)', fontSize: 'var(--fs-small)' }}>no location</span>
+                ) : est != null ? (
+                  <span className="tabular" style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-small)', whiteSpace: 'nowrap' }}>
+                    ~{formatMinutes(est)}
+                  </span>
+                ) : null}
+              </div>
+            )
+          })}
+          {noLocation > 0 && (
+            <p style={{ margin: '8px 0 0', fontSize: 'var(--fs-small)', color: 'var(--text-muted)' }}>
+              {noLocation} stop{noLocation > 1 ? 's have' : ' has'} no saved location — geocode them on the
+              client’s Location tab to show them on the map.
+            </p>
+          )}
+        </div>
       )}
     </Card>
   )
